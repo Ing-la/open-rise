@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 1. 大脑配置：存储 API Key 和模型选型
+model Brain {
+  id        String   @id @default(uuid())
+  name      String
+  provider  String
+  modelName String
+  apiKey    String
+  baseUrl   String?
+  createdAt DateTime @default(now())
+  roles     Role[]
+}
+
+// 2. 有灵魂的个体：直接参与对话的实体
+model Role {
+  id        String    @id @default(uuid())
+  name      String
+  soul      String
+  rule      String
+  avatar    String?
+  brain     Brain     @relation(fields: [brainId], references: [id])
+  brainId   String
+  messages  Message[]
+  memories  Memory[]
+  createdAt DateTime  @default(now())
+
+  @@index([brainId])
+}
+
+// 3. 原始对话记录（短期记忆来源）
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  sender    String   // user / assistant / system
+  role      Role     @relation(fields: [roleId], references: [id])
+  roleId    String
+  createdAt DateTime @default(now())
+
+  @@index([roleId])
+}
+
+// 4. 长期记忆文档（单文件，每人一份）
+model Memory {
+  id           String   @id @default(uuid())
+  content      String   // 结构化 markdown（## 标题 + 摘要 + 正文）
+  updatedAt    DateTime @updatedAt
+  role         Role     @relation(fields: [roleId], references: [id])
+  roleId       String   @unique
+
+  @@index([roleId])
+}

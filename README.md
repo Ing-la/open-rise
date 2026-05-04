@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OpenRise
 
-## Getting Started
+**OpenRise** — 一个本地优先的智能体编排实验室，命令驱动的极客沙盒。
 
-First, run the development server:
+基于 Electron + Next.js 构建，数据存储在本地 SQLite 中，所有 API 调用在客户端完成。
+
+---
+
+## 技术栈
+
+| 维度 | 选型 |
+|------|------|
+| 外壳容器 | Electron |
+| 前端框架 | Next.js (App Router, Static Export) |
+| 样式方案 | Tailwind CSS v4 |
+| 本地后端 | Node.js (Electron Main Process) |
+| 数据库 | SQLite + Prisma |
+| AI SDK | OpenAI 兼容 API (Chat Completions) |
+
+## 快速开始
 
 ```bash
+# 安装依赖
+npm install
+
+# 初始化数据库
+npx prisma migrate dev --name init
+
+# 启动开发环境（同时启动 Next.js + Electron）
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 项目结构
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+openrise/
+├── src/
+│   └── app/          ← Next.js 前端（页面、组件）
+├── main/
+│   ├── main.js       ← Electron 主进程（窗口管理、IPC handler）
+│   ├── db.js         ← Prisma 数据库客户端
+│   └── preload.js    ← 预加载脚本（IPC 桥接）
+├── prisma/
+│   ├── schema.prisma ← 数据模型定义
+│   └── migrations/   ← 数据库迁移历史
+├── shared/
+│   └── ipc-contracts.js  ← 前后端通信合约定义
+└── docs/
+    └── project/      ← 项目文档（架构、UI 设计、数据模型等）
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 数据模型
 
-## Learn More
+```
+Brain ──1:N──> Role ──1:N──> Individual ──1:N──> Message
+```
 
-To learn more about Next.js, take a look at the following resources:
+- **Brain** — API 配置（供应商、模型、密钥）
+- **Role** — 角色模板（soul/rule）
+- **Individual** — 对话实体，绑定 Role 和 Brain
+- **Message** — 对话历史
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 命令系统
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| 命令 | 功能 |
+|------|------|
+| `/brain` | 配置大脑（API Key、模型） |
+| `/role` | 创建/管理人物 |
+| `/chat` | 进入对话模式 |
 
-## Deploy on Vercel
+## 开发说明
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 电子主进程 (`main/`) 使用 CommonJS，不与前端 TypeScript 混用
+- 修改 `main/` 下的代码需要重启 `npm run dev`
+- 修改 `src/` 下的前端代码支持热更新
+- 数据库路径自动切换：开发时用 `prisma/dev.db`，生产时用用户数据目录
