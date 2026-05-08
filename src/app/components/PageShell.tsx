@@ -61,8 +61,8 @@ export default function PageShell() {
         {/* ── Person name — centered, offset for avatar+text midpoint ── */}
         {mode === 'chat' && selectedPerson && (
           <div
-            className="absolute left-1/2 flex items-center gap-2"
-            style={{ transform: 'translateX(calc(-50% - 16px))' }}
+            className="absolute left-1/2 flex items-center gap-2 transition-transform duration-200 ease-out"
+            style={{ transform: `translateX(calc(-50% - 16px${sidebarOpen ? ' + 128px' : ''}))` }}
           >
             <AvatarIcon id={selectedPerson.avatar} size={32} />
             <span className="font-hand text-lg text-oxblood whitespace-nowrap">{selectedPerson.name}</span>
@@ -131,7 +131,7 @@ export default function PageShell() {
         {/* ─── Home ─── */}
         {mode === 'home' && (
           <main className="flex-1 flex flex-col items-center justify-center px-4">
-            <div className="relative mb-12 select-none">
+            <div className="relative mb-12 select-none" style={{ transform: 'translateY(-40px)' }}>
               <h1 className="absolute inset-0 text-[160px] sm:text-[220px] font-hand text-oxblood/10 leading-none text-center" style={{ transform: 'rotate(-0.8deg) translate(-4px, 2px)', filter: 'url(#charcoal)' }} aria-hidden="true">OpenRise</h1>
               <h1 className="absolute inset-0 text-[160px] sm:text-[220px] font-hand text-oxblood/15 leading-none text-center" style={{ transform: 'rotate(0.5deg) translate(3px, -2px)', filter: 'url(#charcoal)' }} aria-hidden="true">OpenRise</h1>
               <h1 className="relative text-[160px] sm:text-[220px] font-hand text-oxblood leading-none text-center wiggle-subtle" style={{ filter: 'url(#charcoal)' }}>OpenRise</h1>

@@ -25,11 +25,11 @@ model Role {
   name      String
   soul      String
   rule      String
+  summary   String?   // LLM 压缩后的历史对话摘要，始终拼入 system prompt
   avatar    String?
   brain     Brain     @relation(fields: [brainId], references: [id])
   brainId   String
   messages  Message[]
-  memories  Memory[]
   createdAt DateTime  @default(now())
 
   @@index([brainId])
@@ -47,13 +47,3 @@ model Message {
   @@index([roleId])
 }
 
-// 4. 长期记忆文档（单文件，每人一份）
-model Memory {
-  id           String   @id @default(uuid())
-  content      String   // 结构化 markdown（## 标题 + 摘要 + 正文）
-  updatedAt    DateTime @updatedAt
-  role         Role     @relation(fields: [roleId], references: [id])
-  roleId       String   @unique
-
-  @@index([roleId])
-}

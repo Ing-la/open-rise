@@ -17,13 +17,11 @@ interface OpenRiseAPI {
     delete(id: string): Promise<{ success: boolean }>;
   };
   chat: {
-    send(params: { roleId: string; content: string }): Promise<{ reply?: string; error?: string }>;
+    sendStream(params: { roleId: string; content: string }): void;
+    onChunk(cb: (data: { content: string }) => void): () => void;
+    onDone(cb: () => void): () => void;
+    onError(cb: (data: { error: string }) => void): () => void;
     list(roleId: string): Promise<any[]>;
-  };
-  memory: {
-    read(roleId: string, title: string): Promise<{ content: string }>;
-    update(roleId: string, content: string): Promise<{ success: boolean }>;
-    clear(roleId: string): Promise<{ success: boolean }>;
   };
 }
 
@@ -58,19 +56,37 @@ export const updateRole = (id: string, params: {
   name: string; brainId: string; soul: string; rule: string; avatar: string | null;
 }) => isElectron ? api!.role.update(id, params) : (console.warn('No Electron context'), Promise.resolve({ success: false }));
 
-// ── Chat ──
-export const sendChatMessage = (roleId: string, content: string) =>
-  isElectron ? api!.chat.send({ roleId, content }) : Promise.resolve({ error: 'No Electron context' });
+// ── Chat: 流式发送 ──
+
+export function sendChatMessageStream(
+  roleId: string,
+  content: string,
+  callbacks: {
+    onChunk: (chunk: string) => void;
+    onDone: () => void;
+    onError: (error: string) => void;
+  }
+): () => void {
+  if (!isElectron) {
+    callbacks.onError('No Electron context');
+    return () => {};
+  }
+
+  const unsubChunk = api!.chat.onChunk((data) => callbacks.onChunk(data.content));
+  const unsubDone = api!.chat.onDone(() => callbacks.onDone());
+  const unsubError = api!.chat.onError((data) => callbacks.onError(data.error));
+
+  api!.chat.sendStream({ roleId, content });
+
+  // 返回一次性取消所有监听的函数
+  return () => {
+    unsubChunk();
+    unsubDone();
+    unsubError();
+  };
+}
+
+// ── Chat: 查询历史（非流式）──
 
 export const listMessages = (roleId: string) =>
   isElectron ? api!.chat.list(roleId) : Promise.resolve([]);
-
-// ── Memory ──
-export const readMemory = (roleId: string, title: string) =>
-  isElectron ? api!.memory.read(roleId, title) : Promise.resolve({ content: '' });
-
-export const updateMemory = (roleId: string, content: string) =>
-  isElectron ? api!.memory.update(roleId, content) : Promise.resolve({ success: false });
-
-export const clearMemory = (roleId: string) =>
-  isElectron ? api!.memory.clear(roleId) : Promise.resolve({ success: false });

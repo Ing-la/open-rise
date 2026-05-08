@@ -30,16 +30,13 @@ const IPC = {
 
   // ── 对话 (Chat) ─────────────────────────────────────────
   CHAT: {
-    LIST: { channel: 'chat:list', params: { roleId: '' }, returns: { messages: [] } },
-    SEND: { channel: 'chat:send', params: { roleId: '', content: '' }, returns: { reply: '' } },
+    LIST:       { channel: 'chat:list',        params: { roleId: '' }, returns: { messages: [] } },
+    SEND_STREAM:{ channel: 'chat:send-stream',  params: { roleId: '', content: '' }, note: 'ipcMain.on → 无返回值，通过 chat:chunk/done/error 事件推送' },
+    CHUNK:      { channel: 'chat:chunk',        note: '推送到渲染进程: { content: string }' },
+    DONE:       { channel: 'chat:done',         note: '推送到渲染进程: { roleId: string }' },
+    ERROR:      { channel: 'chat:error',        note: '推送到渲染进程: { error: string }' },
   },
 
-  // ── 记忆 (Memory) ───────────────────────────────────────
-  MEMORY: {
-    READ:   { channel: 'memory:read',   params: { roleId: '', title: '' }, returns: { content: '' } },
-    UPDATE: { channel: 'memory:update', params: { roleId: '', content: '' }, returns: { success: true } },
-    CLEAR:  { channel: 'memory:clear',  params: { roleId: '' }, returns: { success: true } },
-  },
 };
 
 // ============================================================
@@ -61,12 +58,10 @@ const PRELOAD_API = {
     delete: 'role:delete',
   },
   chat: {
-    send: 'chat:send',
+    sendStream: 'chat:send-stream',
+    onChunk: 'chat:chunk',   // 事件监听
+    onDone:  'chat:done',    // 事件监听
+    onError: 'chat:error',   // 事件监听
     list: 'chat:list',
-  },
-  memory: {
-    read:   'memory:read',
-    update: 'memory:update',
-    clear:  'memory:clear',
   },
 };

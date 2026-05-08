@@ -19,13 +19,25 @@ contextBridge.exposeInMainWorld('openriseAPI', {
   },
   // ── Chat ──
   chat: {
-    send: (params) => ipcRenderer.invoke('chat:send', params),
+    // 流式发送：发出后后端通过 onChunk/onDone/onError 推送
+    sendStream: (params) => ipcRenderer.send('chat:send-stream', params),
+    // 以下三个返回取消监听的函数
+    onChunk: (cb) => {
+      const handler = (_e, d) => cb(d);
+      ipcRenderer.on('chat:chunk', handler);
+      return () => ipcRenderer.removeListener('chat:chunk', handler);
+    },
+    onDone: (cb) => {
+      const handler = () => cb();
+      ipcRenderer.on('chat:done', handler);
+      return () => ipcRenderer.removeListener('chat:done', handler);
+    },
+    onError: (cb) => {
+      const handler = (_e, d) => cb(d);
+      ipcRenderer.on('chat:error', handler);
+      return () => ipcRenderer.removeListener('chat:error', handler);
+    },
+    // 非流式查询（切换角色时加载历史）
     list: (roleId) => ipcRenderer.invoke('chat:list', roleId),
-  },
-  // ── Memory ──
-  memory: {
-    read:   (roleId, title) => ipcRenderer.invoke('memory:read', roleId, title),
-    update: (roleId, content) => ipcRenderer.invoke('memory:update', roleId, content),
-    clear:  (roleId) => ipcRenderer.invoke('memory:clear', roleId),
   },
 });

@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AvatarIcon } from './AvatarIcon';
-import { listMessages, sendChatMessage } from '@/lib/api';
+import { listMessages, sendChatMessageStream } from '@/lib/api';
 
 interface ChatViewProps {
   individuals: any[];
@@ -18,15 +18,21 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamCleanupRef = useRef<(() => void) | null>(null);
+  const msgIdCounter = useRef(0);
 
   // ── Load messages when person changes ──
   useEffect(() => {
     if (selectedPerson) {
-      listMessages(selectedPerson.id).then(setMessages).catch(() => setMessages([]));
+      setLoading(true);
+      listMessages(selectedPerson.id).then(setMessages).catch(() => setMessages([])).finally(() => setLoading(false));
     } else {
       setMessages([]);
+      setLoading(false);
     }
   }, [selectedPerson]);
 
@@ -35,6 +41,11 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // ── Cleanup stream listeners on unmount ──
+  useEffect(() => {
+    return () => streamCleanupRef.current?.();
+  }, []);
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const el = e.target;
     el.style.height = '0';
@@ -42,29 +53,54 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
     setInputValue(el.value);
   }, []);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     if (!inputValue.trim() || !selectedPerson || sending) return;
+    if (error) setError(null);
+
     const content = inputValue.trim();
     setInputValue('');
     if (textareaRef.current) {
       textareaRef.current.style.height = '';
     }
 
-    // Optimistic user message
-    const tempId = 'tmp-' + Date.now();
-    setMessages((prev) => [...prev, { id: tempId, content, sender: 'user' }]);
+    // Clean up any previous stream listeners
+    streamCleanupRef.current?.();
+
+    // Optimistic user message + AI placeholder (guaranteed unique IDs)
+    const userMsgId = 'uid-' + ++msgIdCounter.current;
+    const aiMsgId = 'aid-' + ++msgIdCounter.current;
+    setMessages((prev) => [
+      ...prev,
+      { id: userMsgId, content, sender: 'user' },
+      { id: aiMsgId, content: '', sender: 'assistant' },
+    ]);
 
     setSending(true);
-    try {
-      await sendChatMessage(selectedPerson.id, content);
-      const updated = await listMessages(selectedPerson.id);
-      setMessages(updated);
-    } catch {
-      // silent
-    } finally {
-      setSending(false);
-    }
-  }, [inputValue, selectedPerson, sending]);
+
+    const cleanup = sendChatMessageStream(selectedPerson.id, content, {
+      onChunk: (chunk) => {
+        setMessages((prev) => prev.map((m) =>
+          m.id === aiMsgId ? { ...m, content: m.content + chunk } : m
+        ));
+      },
+      onDone: () => {
+        streamCleanupRef.current = null;
+        setSending(false);
+        // 流完成后从 DB 刷新，将乐观 ID 替换为真实 ID
+        listMessages(selectedPerson.id).then(setMessages).catch(() => {});
+      },
+      onError: (errorMsg) => {
+        streamCleanupRef.current = null;
+        setMessages((prev) => prev.filter(
+          (m) => m.id !== userMsgId && m.id !== aiMsgId
+        ));
+        setError(errorMsg || '发送失败，请重试');
+        setSending(false);
+      },
+    });
+
+    streamCleanupRef.current = cleanup;
+  }, [inputValue, selectedPerson, sending, error]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -77,12 +113,12 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
   const rightColumnVisible = !!selectedPerson && !sidebarOpen;
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden relative">
       {/* ════════════════════════════════════════════
-          Left standing column — door at top, persons below
+          Left standing column — ABSOLUTE overlay
           ════════════════════════════════════════════ */}
       {rightColumnVisible && rightColumnPersons.length > 0 && (
-        <div className="w-28 flex flex-col items-center gap-4 pt-6 shrink-0 overflow-y-auto">
+        <div className="absolute left-0 top-0 bottom-0 w-28 flex flex-col items-center gap-4 pt-6 overflow-y-auto z-10 bg-paper shrink-0">
           <button
             onClick={() => setDoorOpen((v) => !v)}
             className="w-12 h-14 flex items-center justify-center cursor-pointer opacity-30 hover:opacity-100 transition-opacity shrink-0 focus:outline-none"
@@ -116,7 +152,7 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
       )}
 
       {/* ════════════════════════════════════════════
-          Main — messages + input
+          Main — full width, globally centered
           ════════════════════════════════════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 px-6">
         {!selectedPerson ? (
@@ -145,6 +181,11 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
                 ))}
               </div>
             )}
+          </div>
+        ) : loading ? (
+          /* ── Loading ── */
+          <div className="flex-1 flex items-center justify-center">
+            <p className="font-hand text-lg text-oxblood/30 animate-pulse">加载中...</p>
           </div>
         ) : (
           /* ── Person selected ── */
@@ -193,6 +234,13 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
                 <div ref={messagesEndRef} />
               </div>
             </div>
+
+            {/* ── Error toast ── */}
+            {error && (
+              <div className="max-w-3xl mx-auto pb-1">
+                <p className="font-mono text-xs text-red-500/70 text-center animate-pulse">{error}</p>
+              </div>
+            )}
 
             {/* ── Input bar ── */}
             <div className="pb-9 pt-1">
