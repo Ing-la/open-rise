@@ -46,9 +46,10 @@ next-env.d.ts
 prisma/dev.db
 prisma/dev.db-journal
 
-# docs - ignore all except project/
+# docs - ignore all except project/ and project-step/
 /docs/*
 !/docs/project/
+!/docs/project-step/
 
 # claude
 .claude/
