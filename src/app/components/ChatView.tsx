@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AvatarIcon } from './AvatarIcon';
-import { listMessages, sendChatMessageStream } from '@/lib/api';
+import { listMessages, sendChatMessageStream, saveImage } from '@/lib/api';
 
 interface ChatViewProps {
   individuals: any[];
@@ -211,6 +211,35 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
                           <p className="font-mono text-sm text-oxblood leading-relaxed whitespace-pre-wrap">
                             {msg.content}
                           </p>
+                        </div>
+                      </div>
+                    ) : msg.type === 'image' ? (
+                      /* ── Image message — left with avatar + name ── */
+                      <div key={msg.id} className="flex justify-start">
+                        <div className="max-w-[75%]">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AvatarIcon id={selectedPerson.avatar} size={24} />
+                            <span className="font-hand text-sm text-oxblood">{selectedPerson.name}</span>
+                          </div>
+                          <div className="relative group">
+                            <img
+                              src={msg.content}
+                              alt="生成的图片"
+                              className="max-h-64 w-auto rounded-lg"
+                              style={{ filter: 'url(#tremble)' }}
+                            />
+                            <button
+                              onClick={() => saveImage(msg.content)}
+                              className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center bg-black/40 hover:bg-black/60 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                              aria-label="下载图片"
+                              type="button"
+                            >
+                              <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none" aria-hidden="true">
+                                <path d="M 2 12 L 2 14 L 14 14 L 14 12" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d="M 8 2 L 8 10 M 4 6 L 8 10 L 12 6" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ) : (

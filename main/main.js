@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 const serve = require('electron-serve').default;
 const prisma = require('./db');
 
@@ -38,9 +39,9 @@ ipcMain.handle('brain:list', async () => {
 });
 
 ipcMain.handle('brain:create', async (_event, params) => {
-  const { name, vendor, endpoint, apiKey, website, model } = params;
+  const { name, vendor, endpoint, apiKey, website, model, type } = params;
   const brain = await prisma.brain.create({
-    data: { name, provider: vendor, baseUrl: endpoint, apiKey, modelName: model },
+    data: { name, provider: vendor, baseUrl: endpoint, apiKey, modelName: model, type: type || 'chat' },
   });
   return { id: brain.id };
 });
@@ -61,10 +62,10 @@ ipcMain.handle('brain:get', async (_event, id) => {
 });
 
 ipcMain.handle('brain:update', async (_event, id, params) => {
-  const { name, vendor, endpoint, apiKey, website, model } = params;
+  const { name, vendor, endpoint, apiKey, website, model, type } = params;
   const brain = await prisma.brain.update({
     where: { id },
-    data: { name, provider: vendor, baseUrl: endpoint, apiKey, modelName: model },
+    data: { name, provider: vendor, baseUrl: endpoint, apiKey, modelName: model, type: type || 'chat' },
   });
   return { id: brain.id };
 });
@@ -135,6 +136,42 @@ ipcMain.handle('chat:list', async (_event, roleId) => {
   return messages;
 });
 
+// ── Model detection ──
+
+function isImageModel(modelName) {
+  const imageKeywords = [
+    'flux', 'stable-diffusion', 'sdxl', 'dall-e',
+    'black-forest-labs', 'stabilityai', 'deep-floyd',
+    'pixart', 'latent-consistency', 'playground',
+    'kandinsky', 'würstchen', 'cogview', 'glm', 'wanx',
+    'taiyi', 'midjourney', 'qwen',
+  ];
+  const lower = modelName.toLowerCase();
+  return imageKeywords.some(keyword => lower.includes(keyword));
+}
+
+// ── Low-level HTTPS POST helper ──
+
+function rawHttps(urlStr, body, apiKey) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const req = https.request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        Authorization: `Bearer ${apiKey}`,
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => data += c);
+      res.on('end', () => resolve({ statusCode: res.statusCode, body: data }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
 // ── Chat: 流式 ──
 
 ipcMain.on('chat:send-stream', async (event, params) => {
@@ -156,6 +193,94 @@ ipcMain.on('chat:send-stream', async (event, params) => {
   await prisma.message.create({
     data: { content, sender: 'user', roleId },
   });
+
+  // 2b. Image model → call images API
+  const isImage = brain.type === 'image' || isImageModel(brain.modelName);
+  if (isImage) {
+    try {
+      const isDashScope = brain.baseUrl.includes('dashscope');
+      let raw;
+
+      if (isDashScope) {
+        // ── DashScope proprietary format ──
+        const bodyRaw = JSON.stringify({
+          model: brain.modelName,
+          input: {
+            messages: [{ role: 'user', content: [{ text: content }] }],
+          },
+          parameters: { size: '1024*1024', n: 1 },
+        });
+        const url = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+        raw = await rawHttps(url, bodyRaw, brain.apiKey);
+      } else {
+        // ── OpenAI compatible format ──
+        const bodyRaw = JSON.stringify({
+          model: brain.modelName,
+          prompt: content,
+          size: '1024x1024',
+        });
+        raw = await rawHttps(`${brain.baseUrl}/images/generations`, bodyRaw, brain.apiKey);
+      }
+
+      if (!(raw.statusCode >= 200 && raw.statusCode < 300)) {
+        event.sender.send('chat:error', { error: `API error ${raw.statusCode}: ${raw.body}` });
+        return;
+      }
+
+      const data = JSON.parse(raw.body);
+
+      // DashScope puts status inside the body
+      if (isDashScope && data.status_code && data.status_code !== 200) {
+        event.sender.send('chat:error', { error: `DashScope error: ${data.code || data.status_code} ${data.message || ''}` });
+        return;
+      }
+
+      let imageUrl, imageB64;
+
+      if (isDashScope) {
+        // { output: { choices: [{ message: { content: [{ image: "url" }] } }] } }
+        const content = data.output?.choices?.[0]?.message?.content;
+        imageUrl = Array.isArray(content) ? content[0]?.image : null;
+      } else {
+        imageUrl = data.data?.[0]?.url;
+        imageB64 = data.data?.[0]?.b64_json;
+      }
+
+      if (!imageUrl && !imageB64) {
+        event.sender.send('chat:error', { error: 'No image data in response' });
+        return;
+      }
+
+      const imageDir = !app.isPackaged
+        ? path.join(__dirname, '..', 'prisma', 'images', roleId)
+        : path.join(app.getPath('userData'), 'images', roleId);
+      fs.mkdirSync(imageDir, { recursive: true });
+
+      const timestamp = Date.now();
+      const imagePath = path.join(imageDir, `${timestamp}.png`);
+
+      if (imageUrl) {
+        const imgResponse = await fetch(imageUrl);
+        const buffer = Buffer.from(await imgResponse.arrayBuffer());
+        fs.writeFileSync(imagePath, buffer);
+      } else if (imageB64) {
+        const buffer = Buffer.from(imageB64, 'base64');
+        fs.writeFileSync(imagePath, buffer);
+      }
+
+      const appImgUrl = `app-img:///${imagePath.replace(/\\/g, '/')}`;
+
+      await prisma.message.create({
+        data: { content: appImgUrl, sender: 'assistant', roleId, type: 'image' },
+      });
+
+      // For image models, skip compression
+      event.sender.send('chat:done', { roleId });
+    } catch (err) {
+      event.sender.send('chat:error', { error: String(err) });
+    }
+    return;
+  }
 
   // 3. Fetch all messages
   const history = await prisma.message.findMany({
@@ -234,8 +359,6 @@ ipcMain.on('chat:send-stream', async (event, params) => {
     event.sender.send('chat:error', { error: String(err) });
   }
 });
-
-// ── Compression ──
 
 // ── Compression ──
 
@@ -344,8 +467,42 @@ async function checkAndCompress(roleId) {
 }
 
 // ════════════════════════════════════════════════════
+// Custom protocol for serving local images
+// ════════════════════════════════════════════════════
 
-app.whenReady().then(createWindow);
+// ── Image save dialog ──
+
+ipcMain.handle('file:save-dialog', async (_event, appImgUrl) => {
+  // Convert app-img:/// back to absolute path
+  const filePath = appImgUrl.replace(/^app-img:\/\/\//, '');
+  const defaultName = path.basename(filePath);
+
+  const result = await dialog.showSaveDialog({
+    defaultPath: defaultName,
+    filters: [{ name: 'PNG Image', extensions: ['png'] }],
+  });
+
+  if (result.canceled || !result.filePath) return { success: false };
+
+  try {
+    fs.copyFileSync(filePath, result.filePath);
+    return { success: true, savedPath: result.filePath };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app-img', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
+]);
+
+app.whenReady().then(() => {
+  protocol.handle('app-img', (request) => {
+    const url = request.url.replace('app-img:', 'file:');
+    return net.fetch(url);
+  });
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

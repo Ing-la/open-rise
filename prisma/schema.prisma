@@ -15,6 +15,7 @@ model Brain {
   modelName String
   apiKey    String
   baseUrl   String?
+  type      String   @default("chat")  // "chat" | "image"
   createdAt DateTime @default(now())
   roles     Role[]
 }
@@ -40,6 +41,7 @@ model Message {
   id        String   @id @default(uuid())
   content   String
   sender    String   // user / assistant / system
+  type      String   @default("text")  // "text" | "image"
   role      Role     @relation(fields: [roleId], references: [id])
   roleId    String
   createdAt DateTime @default(now())

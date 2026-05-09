@@ -2,6 +2,9 @@
 // Bridges Electron IPC when available; graceful fallback otherwise.
 
 interface OpenRiseAPI {
+  file: {
+    saveImage(url: string): Promise<{ success: boolean; savedPath?: string; error?: string }>;
+  };
   brain: {
     list(): Promise<any[]>;
     create(p: any): Promise<{ id: string }>;
@@ -32,11 +35,11 @@ const isElectron = !!api;
 export const listBrains = () => isElectron ? api!.brain.list() : Promise.resolve([]);
 
 export const createBrain = (params: {
-  name: string; vendor: string; endpoint: string; apiKey: string; website: string; model: string;
+  name: string; vendor: string; endpoint: string; apiKey: string; website: string; model: string; type: string;
 }) => isElectron ? api!.brain.create(params) : (console.warn('No Electron context'), Promise.resolve({ id: '' }));
 
 export const updateBrain = (id: string, params: {
-  name: string; vendor: string; endpoint: string; apiKey: string; website: string; model: string;
+  name: string; vendor: string; endpoint: string; apiKey: string; website: string; model: string; type: string;
 }) => isElectron ? api!.brain.update(id, params) : (console.warn('No Electron context'), Promise.resolve({ id: '' }));
 
 export const deleteBrain = (id: string) => isElectron ? api!.brain.delete(id) : Promise.resolve({ success: false });
@@ -86,7 +89,13 @@ export function sendChatMessageStream(
   };
 }
 
+// ── File: 图片保存 ──
+
+export const saveImage = (appImgUrl: string) =>
+  isElectron ? api!.file.saveImage(appImgUrl) : Promise.resolve({ success: false });
+
 // ── Chat: 查询历史（非流式）──
 
 export const listMessages = (roleId: string) =>
   isElectron ? api!.chat.list(roleId) : Promise.resolve([]);
+

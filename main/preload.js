@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('openriseAPI', {
+  // ── File ──
+  file: {
+    saveImage: (appImgUrl) => ipcRenderer.invoke('file:save-dialog', appImgUrl),
+  },
   // ── Brain ──
   brain: {
     list:   ()           => ipcRenderer.invoke('brain:list'),

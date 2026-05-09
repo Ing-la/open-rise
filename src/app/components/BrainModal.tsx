@@ -83,6 +83,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
   const [apiKey, setApiKey] = useState('');
   const [website, setWebsite] = useState('');
   const [model, setModel] = useState('');
+  const [brainType, setBrainType] = useState<'chat' | 'image' | ''>('');
   const [saving, setSaving] = useState(false);
   const [showList, setShowList] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -93,6 +94,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
     { label: '智谱GLM',   vendor: '智谱GLM',     endpoint: 'https://open.bigmodel.cn/api/paas/v4',                       website: 'https://open.bigmodel.cn' },
     { label: '百炼',      vendor: '百炼',         endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',           website: 'https://bailian.console.aliyun.com' },
     { label: 'Kimi',      vendor: 'Kimi',         endpoint: 'https://api.moonshot.cn/v1',                                 website: 'https://platform.moonshot.cn' },
+    { label: '硅基流动',  vendor: '硅基流动',     endpoint: 'https://api.siliconflow.cn/v1',                              website: 'https://cloud.siliconflow.cn' },
   ] as const;
 
   const handlePreset = useCallback((preset: typeof PRESETS[number]) => {
@@ -102,12 +104,17 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
     setBrainName('');
     setApiKey('');
     setModel('');
+    setBrainType('');
   }, []);
 
+  const isValid = useCallback(() => {
+    return brainName.trim() && vendor.trim() && endpoint.trim() && apiKey.trim() && model.trim() && brainType !== '';
+  }, [brainName, vendor, endpoint, apiKey, model, brainType]);
+
   const handleSave = useCallback(async () => {
-    if (!brainName.trim()) return;
+    if (!isValid()) return;
     setSaving(true);
-    const payload = { name: brainName.trim(), vendor, endpoint, apiKey, website, model };
+    const payload = { name: brainName.trim(), vendor, endpoint, apiKey, website, model, type: brainType as string };
     try {
       if (editingId) {
         await updateBrain(editingId, payload);
@@ -120,7 +127,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
     } finally {
       setSaving(false);
     }
-  }, [brainName, vendor, endpoint, apiKey, website, model, editingId, onClose]);
+  }, [brainName, vendor, endpoint, apiKey, website, model, brainType, editingId, onClose]);
 
   const handleEdit = useCallback((brain: any) => {
     setBrainName(brain.name);
@@ -129,6 +136,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
     setApiKey(brain.apiKey);
     setWebsite(brain.website ?? '');
     setModel(brain.modelName);
+    setBrainType(brain.type || 'chat');
     setEditingId(brain.id);
     setMode('form');
     setShowList(false);
@@ -198,9 +206,34 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
             <h2 className="font-hand text-2xl text-oxblood">
               {mode === 'form' && showList ? '大脑列表' : mode === 'form' ? (editingId ? '编辑大脑' : '新建大脑') : '大脑配置'}
             </h2>
-            {(mode === 'empty' || showList) && (
+            {mode === 'form' && !showList ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setShowList(true); setEditingId(null); }}
+                  className="relative px-3 py-1.5 font-hand text-sm cursor-pointer select-none"
+                  type="button"
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 70 30" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                    <rect x="1" y="1" width="68" height="28" rx="6" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+                  </svg>
+                  <span className="relative text-oxblood">取消</span>
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !isValid()}
+                  className="relative px-3 py-1.5 font-hand text-sm cursor-pointer select-none disabled:opacity-40"
+                  type="button"
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 70 30" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                    <rect x="1" y="1" width="68" height="28" rx="6" fill="#2C2C2C" />
+                    <rect x="1" y="1" width="68" height="28" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+                  </svg>
+                  <span className="relative text-white">{saving ? '保存中...' : '保存'}</span>
+                </button>
+              </div>
+            ) : (mode === 'empty' || showList) && (
               <button
-                onClick={() => { setMode('form'); setShowList(false); setEditingId(null); setBrainName(''); setVendor(''); setEndpoint(''); setApiKey(''); setWebsite(''); setModel(''); }}
+                onClick={() => { setMode('form'); setShowList(false); setEditingId(null); setBrainName(''); setVendor(''); setEndpoint(''); setApiKey(''); setWebsite(''); setModel(''); setBrainType(''); }}
                 className="group w-8 h-8 flex items-center justify-center cursor-pointer"
                 aria-label="新建大脑"
               >
@@ -400,47 +433,57 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
                 <div className="shaky-line w-full mt-1" />
               </div>
 
-              {/* 6. 模型选择 */}
+              {/* 6. 模型选择 + 类型切换 */}
               <div className="group">
                 <label className="block font-hand text-base text-oxblood mb-1">模型选择 <span className="text-oxblood/40">(手动输入)</span></label>
-                <input
-                  type="text"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="w-full bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-oxblood placeholder-oxblood/30 caret-oxblood"
-                  placeholder="例如: deepseek-chat"
-                  autoComplete="off"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-oxblood placeholder-oxblood/30 caret-oxblood min-w-0"
+                    placeholder="例如: deepseek-chat"
+                    autoComplete="off"
+                  />
+                  {/* Type toggle */}
+                  <button
+                    onClick={() => setBrainType('chat')}
+                    className={`relative px-3 py-1 font-hand text-sm cursor-pointer select-none shrink-0 ${brainType === 'image' ? 'opacity-40 hover:opacity-70' : ''}`}
+                    type="button"
+                  >
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 60 28" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                      {brainType === 'chat' ? (
+                        <>
+                          <rect x="1" y="1" width="58" height="26" rx="6" fill="#2C2C2C" />
+                          <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+                        </>
+                      ) : (
+                        <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" opacity="0.5" />
+                      )}
+                    </svg>
+                    <span className={`relative ${brainType === 'chat' ? 'text-white' : 'text-oxblood/60'}`}>对话</span>
+                  </button>
+                  <button
+                    onClick={() => setBrainType('image')}
+                    className={`relative px-3 py-1 font-hand text-sm cursor-pointer select-none shrink-0 ${brainType === 'chat' ? 'opacity-40 hover:opacity-70' : ''}`}
+                    type="button"
+                  >
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 60 28" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                      {brainType === 'image' ? (
+                        <>
+                          <rect x="1" y="1" width="58" height="26" rx="6" fill="#2C2C2C" />
+                          <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+                        </>
+                      ) : (
+                        <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" opacity="0.5" />
+                      )}
+                    </svg>
+                    <span className={`relative ${brainType === 'image' ? 'text-white' : 'text-oxblood/60'}`}>文生图</span>
+                  </button>
+                </div>
                 <div className="shaky-line w-full mt-1" />
-              </div>
+              </div>{/* ── end form fields ── */}
 
-              {/* ── Action buttons ── */}
-              <div className="flex items-center justify-end gap-4 pt-4">
-                <button
-                  onClick={() => { setShowList(true); setEditingId(null); }}
-                  className="relative px-6 py-2 font-hand text-base cursor-pointer select-none"
-                  style={{ minWidth: '88px' }}
-                  type="button"
-                >
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 42" preserveAspectRatio="none" fill="none" aria-hidden="true">
-                    <rect x="2" y="2" width="96" height="38" rx="8" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
-                  </svg>
-                  <span className="relative text-oxblood">取消</span>
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving || !brainName.trim()}
-                  className="relative px-6 py-2 font-hand text-base cursor-pointer select-none disabled:opacity-40"
-                  style={{ minWidth: '88px' }}
-                  type="button"
-                >
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 42" preserveAspectRatio="none" fill="none" aria-hidden="true">
-                    <rect x="2" y="2" width="96" height="38" rx="8" fill="#2C2C2C" />
-                    <rect x="2" y="2" width="96" height="38" rx="8" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
-                  </svg>
-                  <span className="relative text-white">{saving ? '保存中...' : '保存'}</span>
-                </button>
-              </div>
             </div>
           )}
         </div>

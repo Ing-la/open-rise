@@ -1,2 +1,0 @@
-deepseek-v4-flash
-sk-c1aa4b9c01674744a321ac1d601af44c

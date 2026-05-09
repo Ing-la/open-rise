@@ -13,10 +13,10 @@ const IPC = {
   // ── 大脑 (Brain) ─────────────────────────────────────────
   BRAIN: {
     LIST:   { channel: 'brain:list',   params: {}, returns: { brains: [] } },
-    CREATE: { channel: 'brain:create', params: { name: '', vendor: '', endpoint: '', apiKey: '', website: '', model: '' }, returns: { id: '' } },
+    CREATE: { channel: 'brain:create', params: { name: '', vendor: '', endpoint: '', apiKey: '', website: '', model: '', type: 'chat' }, returns: { id: '' } },
     DELETE: { channel: 'brain:delete', params: { id: '' }, returns: { success: true } },
     GET:    { channel: 'brain:get',    params: { id: '' }, returns: { brain: null } },
-    UPDATE: { channel: 'brain:update', params: { id: '', name: '', vendor: '', endpoint: '', apiKey: '', website: '', model: '' }, returns: { id: '' } },
+    UPDATE: { channel: 'brain:update', params: { id: '', name: '', vendor: '', endpoint: '', apiKey: '', website: '', model: '', type: 'chat' }, returns: { id: '' } },
     TEST:   { channel: 'brain:test',   params: { id: '' }, returns: { success: true } },
   },
 
@@ -37,12 +37,20 @@ const IPC = {
     ERROR:      { channel: 'chat:error',        note: '推送到渲染进程: { error: string }' },
   },
 
+  // ── 文件 (File) ─────────────────────────────────────────
+  FILE: {
+    SAVE_DIALOG: { channel: 'file:save-dialog', params: { appImgUrl: '' }, returns: { success: true, savedPath: '' } },
+  },
+
 };
 
 // ============================================================
 // Preload API 映射
 // ============================================================
 const PRELOAD_API = {
+  file: {
+    saveImage: 'file:save-dialog',
+  },
   brain: {
     list:   'brain:list',
     create: 'brain:create',
