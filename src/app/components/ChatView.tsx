@@ -192,7 +192,7 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
           <>
             {/* ── Messages ── */}
             <div className="flex-1 overflow-y-auto thin-scroll pt-8 pb-4">
-              <div className="max-w-3xl mx-auto space-y-6">
+              <div className="max-w-2xl mx-auto space-y-6">
                 {messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center pt-16">
                     <span className="font-hand text-4xl text-oxblood/30 select-none" style={{ filter: 'url(#charcoal)' }}>
@@ -205,10 +205,10 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
                 ) : (
                   messages.map((msg) =>
                     msg.sender === 'user' ? (
-                      /* ── User message — right ── */
+                      /* ── User message — right with border ── */
                       <div key={msg.id} className="flex justify-end">
                         <div className="max-w-[75%]">
-                          <p className="font-mono text-sm text-oxblood leading-relaxed whitespace-pre-wrap">
+                          <p className="font-mono text-sm text-oxblood leading-relaxed whitespace-pre-wrap px-4 py-2.5 bg-paper border border-oxblood rounded-xl">
                             {msg.content}
                           </p>
                         </div>
@@ -216,12 +216,12 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
                     ) : msg.type === 'image' ? (
                       /* ── Image message — left with avatar + name ── */
                       <div key={msg.id} className="flex justify-start">
-                        <div className="max-w-[75%]">
+                        <div className="max-w-[90%]">
                           <div className="flex items-center gap-2 mb-2">
                             <AvatarIcon id={selectedPerson.avatar} size={24} />
                             <span className="font-hand text-sm text-oxblood">{selectedPerson.name}</span>
                           </div>
-                          <div className="relative group">
+                          <div className="relative group ml-6">
                             <img
                               src={msg.content}
                               alt="生成的图片"
@@ -245,12 +245,12 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
                     ) : (
                       /* ── AI message — left with avatar + name ── */
                       <div key={msg.id} className="flex justify-start">
-                        <div className="max-w-[75%]">
+                        <div className="max-w-[90%]">
                           <div className="flex items-center gap-2 mb-2">
                             <AvatarIcon id={selectedPerson.avatar} size={24} />
                             <span className="font-hand text-sm text-oxblood">{selectedPerson.name}</span>
                           </div>
-                          <div className="markdown-content">
+                          <div className="markdown-content ml-6">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
                               {msg.content}
                             </ReactMarkdown>
