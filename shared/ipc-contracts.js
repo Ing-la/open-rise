@@ -31,10 +31,10 @@ const IPC = {
   // ── 对话 (Chat) ─────────────────────────────────────────
   CHAT: {
     LIST:       { channel: 'chat:list',        params: { roleId: '' }, returns: { messages: [] } },
-    SEND_STREAM:{ channel: 'chat:send-stream',  params: { roleId: '', content: '' }, note: 'ipcMain.on → 无返回值，通过 chat:chunk/done/error 事件推送' },
-    CHUNK:      { channel: 'chat:chunk',        note: '推送到渲染进程: { content: string }' },
-    DONE:       { channel: 'chat:done',         note: '推送到渲染进程: { roleId: string }' },
-    ERROR:      { channel: 'chat:error',        note: '推送到渲染进程: { error: string }' },
+    SEND_STREAM:{ channel: 'chat:send-stream',  params: { roleId: '', content: '' }, note: 'ipcMain.on → 通过 chat:chunk/done/error 推送' },
+    CHUNK:      { channel: 'chat:chunk',        note: '推送: { content: string }' },
+    DONE:       { channel: 'chat:done',         note: '推送: { roleId: string }' },
+    ERROR:      { channel: 'chat:error',        note: '推送: { error: string }' },
   },
 
   // ── 文件 (File) ─────────────────────────────────────────
@@ -42,6 +42,24 @@ const IPC = {
     SAVE_DIALOG: { channel: 'file:save-dialog', params: { appImgUrl: '' }, returns: { success: true, savedPath: '' } },
   },
 
+  // ── Agent ────────────────────────────────────────────────
+  AGENT: {
+    SESSION_CREATE: { channel: 'agent:session-create', params: { roleId: '', title: '' }, returns: { id: '' } },
+    SESSION_LIST:   { channel: 'agent:session-list',   params: { roleId: '' }, returns: { sessions: [] } },
+    SESSION_DELETE: { channel: 'agent:session-delete', params: { sessionId: '' }, returns: { success: true } },
+    SESSION_MESSAGES: { channel: 'agent:session-messages', params: { sessionId: '' }, returns: { messages: [] } },
+
+    SEND: { channel: 'agent:send', params: { sessionId: '', roleId: '', content: '' }, note: 'ipcMain.on → 通过 agent:progress/trace/done/error 推送' },
+    STOP: { channel: 'agent:stop', params: { sessionId: '' }, note: 'ipcMain.on, 发送中止信号' },
+
+    PROGRESS: { channel: 'agent:progress', note: '推送: { sessionId, status, message }' },
+    TRACE:    { channel: 'agent:trace',    note: '推送: { sessionId, step, type, name, input, output }' },
+    DONE:     { channel: 'agent:done',     note: '推送: { sessionId, result, trace }' },
+    ERROR:    { channel: 'agent:error',    note: '推送: { sessionId, error }' },
+
+    TRUST_ADD:  { channel: 'agent:trust-add',  params: { path: '' }, returns: { success: true, paths: [] } },
+    TRUST_LIST: { channel: 'agent:trust-list', params: {}, returns: { paths: [] } },
+  },
 };
 
 // ============================================================
@@ -67,9 +85,26 @@ const PRELOAD_API = {
   },
   chat: {
     sendStream: 'chat:send-stream',
-    onChunk: 'chat:chunk',   // 事件监听
-    onDone:  'chat:done',    // 事件监听
-    onError: 'chat:error',   // 事件监听
+    onChunk: 'chat:chunk',
+    onDone:  'chat:done',
+    onError: 'chat:error',
     list: 'chat:list',
   },
+  agent: {
+    createSession: 'agent:session-create',
+    listSessions:  'agent:session-list',
+    deleteSession: 'agent:session-delete',
+    send:   'agent:send',
+    stop:   'agent:stop',
+    onProgress: 'agent:progress',
+    onTrace:    'agent:trace',
+    onDone:     'agent:done',
+    onError:    'agent:error',
+    trustAdd:  'agent:trust-add',
+    trustList: 'agent:trust-list',
+  },
 };
+
+if (typeof module !== 'undefined') {
+  module.exports = { IPC, PRELOAD_API };
+}

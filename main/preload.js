@@ -23,9 +23,7 @@ contextBridge.exposeInMainWorld('openriseAPI', {
   },
   // ── Chat ──
   chat: {
-    // 流式发送：发出后后端通过 onChunk/onDone/onError 推送
     sendStream: (params) => ipcRenderer.send('chat:send-stream', params),
-    // 以下三个返回取消监听的函数
     onChunk: (cb) => {
       const handler = (_e, d) => cb(d);
       ipcRenderer.on('chat:chunk', handler);
@@ -41,7 +39,44 @@ contextBridge.exposeInMainWorld('openriseAPI', {
       ipcRenderer.on('chat:error', handler);
       return () => ipcRenderer.removeListener('chat:error', handler);
     },
-    // 非流式查询（切换角色时加载历史）
     list: (roleId) => ipcRenderer.invoke('chat:list', roleId),
+  },
+  // ── Agent ──
+  agent: {
+    // Session management
+    createSession: (params) => ipcRenderer.invoke('agent:session-create', params),
+    listSessions:  (roleId)  => ipcRenderer.invoke('agent:session-list', roleId),
+    deleteSession: (id)      => ipcRenderer.invoke('agent:session-delete', id),
+    listMessages:  (id)      => ipcRenderer.invoke('agent:session-messages', id),
+
+    // Agent loop
+    send:     (params) => ipcRenderer.send('agent:send', params),
+    stop:     (id)     => ipcRenderer.send('agent:stop', id),
+
+    // Event listeners (return cleanup functions)
+    onProgress: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('agent:progress', h);
+      return () => ipcRenderer.removeListener('agent:progress', h);
+    },
+    onTrace: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('agent:trace', h);
+      return () => ipcRenderer.removeListener('agent:trace', h);
+    },
+    onDone: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('agent:done', h);
+      return () => ipcRenderer.removeListener('agent:done', h);
+    },
+    onError: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('agent:error', h);
+      return () => ipcRenderer.removeListener('agent:error', h);
+    },
+
+    // Trusted paths
+    trustAdd:  (path)  => ipcRenderer.invoke('agent:trust-add', path),
+    trustList: ()      => ipcRenderer.invoke('agent:trust-list'),
   },
 });

@@ -49,3 +49,31 @@ model Message {
   @@index([roleId])
 }
 
+// 4. Agent 会话：一次独立的 agent 任务
+model AgentSession {
+  id        String   @id @default(uuid())
+  roleId    String
+  title     String   // 自动摘要或用户命名
+  status    String   @default("active")  // "active" | "archived"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  AgentMessage[]
+
+  @@index([roleId])
+}
+
+// 5. Agent 消息：包含 tool_use/tool_result 的多角色消息
+model AgentMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  role      String   // "user" | "assistant" | "tool_use" | "tool_result"
+  content   String
+  type      String   @default("text")  // "text" | "tool_call" | "tool_result"
+  toolName  String?  // tool_use 的工具名
+  toolId    String?  // tool_use_id，匹配 tool_use/tool_result
+  session   AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+

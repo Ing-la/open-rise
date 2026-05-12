@@ -26,6 +26,20 @@ interface OpenRiseAPI {
     onError(cb: (data: { error: string }) => void): () => void;
     list(roleId: string): Promise<any[]>;
   };
+  agent: {
+    createSession(params: { roleId: string; title?: string }): Promise<{ id: string }>;
+    listSessions(roleId: string): Promise<any[]>;
+    deleteSession(id: string): Promise<{ success: boolean }>;
+    listMessages(id: string): Promise<any[]>;
+    send(params: { sessionId: string; roleId: string; content: string }): void;
+    stop(sessionId: string): void;
+    onProgress(cb: (data: any) => void): () => void;
+    onTrace(cb: (data: any) => void): () => void;
+    onDone(cb: (data: any) => void): () => void;
+    onError(cb: (data: any) => void): () => void;
+    trustAdd(path: string): Promise<{ success: boolean; paths: string[] }>;
+    trustList(): Promise<{ paths: string[] }>;
+  };
 }
 
 const api = (typeof window !== 'undefined' ? (window as any).openriseAPI : undefined) as OpenRiseAPI | undefined;
@@ -81,7 +95,6 @@ export function sendChatMessageStream(
 
   api!.chat.sendStream({ roleId, content });
 
-  // 返回一次性取消所有监听的函数
   return () => {
     unsubChunk();
     unsubDone();
@@ -94,8 +107,62 @@ export function sendChatMessageStream(
 export const saveImage = (appImgUrl: string) =>
   isElectron ? api!.file.saveImage(appImgUrl) : Promise.resolve({ success: false });
 
-// ── Chat: 查询历史（非流式）──
+// ── Chat: 查询历史 ──
 
 export const listMessages = (roleId: string) =>
   isElectron ? api!.chat.list(roleId) : Promise.resolve([]);
 
+// ── Agent: Session 管理 ──
+
+export const createAgentSession = (params: { roleId: string; title?: string }) =>
+  isElectron ? api!.agent.createSession(params) : Promise.resolve({ id: '' });
+
+export const listAgentSessions = (roleId: string) =>
+  isElectron ? api!.agent.listSessions(roleId) : Promise.resolve([]);
+
+export const deleteAgentSession = (id: string) =>
+  isElectron ? api!.agent.deleteSession(id) : Promise.resolve({ success: false });
+
+export const listAgentMessages = (sessionId: string) =>
+  isElectron ? api!.agent.listMessages(sessionId) : Promise.resolve([]);
+
+// ── Agent: 发送任务 ──
+
+export interface AgentCallbacks {
+  onProgress?: (data: { sessionId: string; status: string; message: string }) => void;
+  onTrace?: (data: { sessionId: string; step: number; type: string; name?: string; input?: any; output?: string; content?: string }) => void;
+  onDone?: (data: { sessionId: string; result: string; trace: any[] }) => void;
+  onError?: (data: { sessionId: string; error: string }) => void;
+}
+
+export function sendAgentTask(
+  params: { sessionId: string; roleId: string; content: string },
+  callbacks: AgentCallbacks
+): () => void {
+  if (!isElectron) {
+    callbacks.onError?.({ sessionId: params.sessionId, error: 'No Electron context' });
+    return () => {};
+  }
+
+  const cleanups: (() => void)[] = [];
+  if (callbacks.onProgress) cleanups.push(api!.agent.onProgress(callbacks.onProgress));
+  if (callbacks.onTrace) cleanups.push(api!.agent.onTrace(callbacks.onTrace));
+  if (callbacks.onDone) cleanups.push(api!.agent.onDone(callbacks.onDone));
+  if (callbacks.onError) cleanups.push(api!.agent.onError(callbacks.onError));
+
+  api!.agent.send(params);
+
+  return () => cleanups.forEach((fn) => fn());
+}
+
+export function stopAgentTask(sessionId: string) {
+  if (isElectron) api!.agent.stop(sessionId);
+}
+
+// ── Agent: 信任路径 ──
+
+export const addTrustedPath = (path: string) =>
+  isElectron ? api!.agent.trustAdd(path) : Promise.resolve({ success: false, paths: [] });
+
+export const listTrustedPaths = () =>
+  isElectron ? api!.agent.trustList() : Promise.resolve({ paths: [] });
