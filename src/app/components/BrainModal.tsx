@@ -83,7 +83,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
   const [apiKey, setApiKey] = useState('');
   const [website, setWebsite] = useState('');
   const [model, setModel] = useState('');
-  const [brainType, setBrainType] = useState<'chat' | 'image' | ''>('');
+  const [brainTypes, setBrainTypes] = useState<string[]>(['chat']);
   const [saving, setSaving] = useState(false);
   const [showList, setShowList] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -104,17 +104,17 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
     setBrainName('');
     setApiKey('');
     setModel('');
-    setBrainType('');
+    setBrainTypes(['chat']);
   }, []);
 
   const isValid = useCallback(() => {
-    return brainName.trim() && vendor.trim() && endpoint.trim() && apiKey.trim() && model.trim() && brainType !== '';
-  }, [brainName, vendor, endpoint, apiKey, model, brainType]);
+    return brainName.trim() && vendor.trim() && endpoint.trim() && apiKey.trim() && model.trim() && brainTypes.length > 0;
+  }, [brainName, vendor, endpoint, apiKey, model, brainTypes]);
 
   const handleSave = useCallback(async () => {
     if (!isValid()) return;
     setSaving(true);
-    const payload = { name: brainName.trim(), vendor, endpoint, apiKey, website, model, type: brainType as string };
+    const payload = { name: brainName.trim(), vendor, endpoint, apiKey, website, model, type: brainTypes.join(',') };
     try {
       if (editingId) {
         await updateBrain(editingId, payload);
@@ -127,7 +127,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
     } finally {
       setSaving(false);
     }
-  }, [brainName, vendor, endpoint, apiKey, website, model, brainType, editingId, onClose]);
+  }, [brainName, vendor, endpoint, apiKey, website, model, brainTypes, editingId, onClose]);
 
   const handleEdit = useCallback((brain: any) => {
     setBrainName(brain.name);
@@ -136,7 +136,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
     setApiKey(brain.apiKey);
     setWebsite(brain.website ?? '');
     setModel(brain.modelName);
-    setBrainType(brain.type || 'chat');
+    setBrainTypes((brain.type || 'chat').split(',').filter(Boolean));
     setEditingId(brain.id);
     setMode('form');
     setShowList(false);
@@ -233,7 +233,7 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
               </div>
             ) : (mode === 'empty' || showList) && (
               <button
-                onClick={() => { setMode('form'); setShowList(false); setEditingId(null); setBrainName(''); setVendor(''); setEndpoint(''); setApiKey(''); setWebsite(''); setModel(''); setBrainType(''); }}
+                onClick={() => { setMode('form'); setShowList(false); setEditingId(null); setBrainName(''); setVendor(''); setEndpoint(''); setApiKey(''); setWebsite(''); setModel(''); setBrainTypes(['chat']); }}
                 className="group w-8 h-8 flex items-center justify-center cursor-pointer"
                 aria-label="新建大脑"
               >
@@ -445,41 +445,30 @@ export default function BrainModal({ isOpen, onClose }: BrainModalProps) {
                     placeholder="例如: deepseek-chat"
                     autoComplete="off"
                   />
-                  {/* Type toggle */}
-                  <button
-                    onClick={() => setBrainType('chat')}
-                    className={`relative px-3 py-1 font-hand text-sm cursor-pointer select-none shrink-0 ${brainType === 'image' ? 'opacity-40 hover:opacity-70' : ''}`}
-                    type="button"
-                  >
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 60 28" preserveAspectRatio="none" fill="none" aria-hidden="true">
-                      {brainType === 'chat' ? (
-                        <>
-                          <rect x="1" y="1" width="58" height="26" rx="6" fill="#2C2C2C" />
-                          <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
-                        </>
-                      ) : (
-                        <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" opacity="0.5" />
-                      )}
-                    </svg>
-                    <span className={`relative ${brainType === 'chat' ? 'text-white' : 'text-oxblood/60'}`}>对话</span>
-                  </button>
-                  <button
-                    onClick={() => setBrainType('image')}
-                    className={`relative px-3 py-1 font-hand text-sm cursor-pointer select-none shrink-0 ${brainType === 'chat' ? 'opacity-40 hover:opacity-70' : ''}`}
-                    type="button"
-                  >
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 60 28" preserveAspectRatio="none" fill="none" aria-hidden="true">
-                      {brainType === 'image' ? (
-                        <>
-                          <rect x="1" y="1" width="58" height="26" rx="6" fill="#2C2C2C" />
-                          <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
-                        </>
-                      ) : (
-                        <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" opacity="0.5" />
-                      )}
-                    </svg>
-                    <span className={`relative ${brainType === 'image' ? 'text-white' : 'text-oxblood/60'}`}>文生图</span>
-                  </button>
+                  {/* Type multi-select */}
+                  {['chat', 'image', 'vision'].map((t) => {
+                    const active = brainTypes.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        onClick={() => setBrainTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])}
+                        className={`relative px-3 py-1 font-hand text-sm cursor-pointer select-none shrink-0`}
+                        type="button"
+                      >
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 60 28" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                          {active ? (
+                            <>
+                              <rect x="1" y="1" width="58" height="26" rx="6" fill="#2C2C2C" />
+                              <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+                            </>
+                          ) : (
+                            <rect x="1" y="1" width="58" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" opacity="0.5" />
+                          )}
+                        </svg>
+                        <span className={`relative ${active ? 'text-white' : 'text-oxblood/60'}`}>{t}</span>
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="shaky-line w-full mt-1" />
               </div>{/* ── end form fields ── */}

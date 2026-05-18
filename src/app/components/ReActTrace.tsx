@@ -61,7 +61,7 @@ function TraceStepRow({ step, type, content, name, input, output }: TraceStep & 
               onClick={() => setExpanded(!expanded)}
               className="block font-mono text-xs text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 mt-0.5 cursor-pointer"
             >
-              ← {output.length > 50 ? `${output.slice(0, 50)}...` : output}
+              ← {output.length > 200 ? `${output.slice(0, 200)}...` : output}
             </button>
           )}
         </div>

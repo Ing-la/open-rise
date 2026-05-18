@@ -1,6 +1,10 @@
 const prisma = require('../db');
+const fs = require('fs');
+const path = require('path');
 const { executeTool, TOOL_DEFINITIONS } = require('../tools');
 const { microCompact, autoCompact, shouldCompact } = require('../memory/agent-compact');
+
+const CAPABILITIES_PATH = path.join(__dirname, '..', 'agent-capabilities.json');
 
 // Track active sessions for stop mechanism
 const stoppedSessions = new Set();
@@ -62,6 +66,7 @@ When the task is done, summarize what you accomplished.`);
 async function runAgentLoop(event, sessionId, roleId, content) {
   let step = 0;
   const trace = [];
+  let lastImageResult = null;
   const MAX_LOOP_ITERATIONS = 30;
 
   // Load session, role, brain
@@ -154,6 +159,27 @@ async function runAgentLoop(event, sessionId, roleId, content) {
       event.sender.send('agent:progress', { sessionId, status: 'thinking', message: '继续工作...' });
     }
 
+    // Build tool list (base + capabilities)
+    const tools = [...TOOL_DEFINITIONS];
+    const caps = loadCapabilities();
+    if (caps.image?.brainId) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'generate_image',
+          description: 'Generate an image based on a text prompt. Use this when the user asks you to draw, paint, create, or generate an image. The tool returns a markdown image link. You MUST include this link directly in your final response to show the image to the user.',
+          parameters: {
+            type: 'object',
+            properties: {
+              prompt: { type: 'string', description: 'Description of the image to generate (use English for best results)' },
+              size: { type: 'string', enum: ['1024x1024', '1792x1024', '1024x1792'], description: 'Image size, default 1024x1024' },
+            },
+            required: ['prompt'],
+          },
+        },
+      });
+    }
+
     // Call LLM
     const response = await fetch(`${brain.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -164,7 +190,7 @@ async function runAgentLoop(event, sessionId, roleId, content) {
       body: JSON.stringify({
         model: brain.modelName,
         messages,
-        tools: TOOL_DEFINITIONS,
+        tools,
         max_tokens: 8192,
       }),
     });
@@ -192,11 +218,16 @@ async function runAgentLoop(event, sessionId, roleId, content) {
     const toolCalls = msg.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
       // No tool calls → done
+      // Auto-append image markdown if generate_image was called but LLM didn't include it
+      let finalResult = thoughtContent;
+      if (lastImageResult && lastImageResult.startsWith('![') && !finalResult.includes('app-img://')) {
+        finalResult += '\n\n' + lastImageResult;
+      }
       // Save assistant message
       await prisma.agentMessage.create({
-        data: { sessionId, role: 'assistant', content: thoughtContent, type: 'text' },
+        data: { sessionId, role: 'assistant', content: finalResult, type: 'text' },
       });
-      event.sender.send('agent:done', { sessionId, result: thoughtContent, trace });
+      event.sender.send('agent:done', { sessionId, result: finalResult, trace });
       return;
     }
 
@@ -255,6 +286,7 @@ async function runAgentLoop(event, sessionId, roleId, content) {
       let result;
       try {
         result = await executeTool(toolName, toolArgs);
+        if (toolName === 'generate_image') lastImageResult = result;
         traceEntry.output = result.length > 200 ? result.slice(0, 200) + '...' : result;
       } catch (err) {
         result = `Error: ${err.message}`;
@@ -301,6 +333,16 @@ async function runAgentLoop(event, sessionId, roleId, content) {
     result: '(已达到最大迭代次数，任务可能未完成)',
     trace,
   });
+}
+
+// ── Capabilities ──
+
+function loadCapabilities() {
+  try {
+    return JSON.parse(fs.readFileSync(CAPABILITIES_PATH, 'utf-8'));
+  } catch {
+    return {};
+  }
 }
 
 // ── Registration ──
@@ -362,5 +404,34 @@ module.exports = function (ipcMain) {
   ipcMain.handle('agent:trust-list', async () => {
     const { loadTrustedPaths } = require('../tools/safe-path');
     return { paths: loadTrustedPaths() };
+  });
+
+  // Multi-modal capabilities
+  ipcMain.handle('agent:capabilities-load', async () => {
+    return loadCapabilities();
+  });
+
+  ipcMain.handle('agent:capabilities-save', async (_event, config) => {
+    fs.writeFileSync(CAPABILITIES_PATH, JSON.stringify(config, null, 2));
+    return { success: true };
+  });
+
+  // Dynamic tool list (base tools + capabilities, user-facing display)
+  const TOOL_DISPLAY = {
+    read_file:      { name: 'read_file',      description: '读取文件',           params: ['path（必需）, limit（可选）'] },
+    write_file:     { name: 'write_file',     description: '写入文件（覆盖）',    params: ['path（必需）, content（必需）'] },
+    edit_file:      { name: 'edit_file',      description: '替换文本',           params: ['path（必需）, old_text（必需）, new_text（必需）'] },
+    web_fetch:      { name: 'web_fetch',      description: '获取网页正文',        params: ['url（必需）'] },
+    web_search:     { name: 'web_search',     description: '搜索互联网',          params: ['query（必需）, count（可选）'] },
+    generate_image: { name: 'generate_image', description: '文生图',             params: ['prompt（必需）, size（可选）'] },
+  };
+
+  ipcMain.handle('agent:tool-list', async () => {
+    const caps = loadCapabilities();
+    const list = TOOL_DEFINITIONS.map((t) => TOOL_DISPLAY[t.function.name]).filter(Boolean);
+    if (caps.image?.brainId) {
+      list.push(TOOL_DISPLAY.generate_image);
+    }
+    return list;
   });
 };

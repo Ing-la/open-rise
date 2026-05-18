@@ -3,6 +3,7 @@ const writeFile = require('./write');
 const editFile = require('./edit');
 const webFetch = require('./web_fetch');
 const webSearch = require('./web_search');
+const generateImage = require('./draw');
 
 const TOOL_HANDLERS = {
   read_file: readFile,
@@ -10,6 +11,7 @@ const TOOL_HANDLERS = {
   edit_file: editFile,
   web_fetch: webFetch,
   web_search: webSearch,
+  generate_image: generateImage,
 };
 
 // OpenAI-compatible tool definitions for the LLM

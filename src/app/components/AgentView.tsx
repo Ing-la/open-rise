@@ -12,6 +12,7 @@ import {
   stopAgentTask,
   listTrustedPaths,
   addTrustedPath,
+  getAgentToolList,
 } from '@/lib/api';
 
 interface AgentViewProps {
@@ -156,24 +157,17 @@ export default function AgentView({
     { cmd: '/help', desc: '显示此帮助' },
   ];
 
-  const TOOL_LIST_TEXT = `可用工具:
-
-  read_file  读取文件内容
-             参数: path (必需), limit (可选)
-
-  write_file 写入文件（覆盖已有内容，自动创建父目录）
-             参数: path (必需), content (必需)
-
-  edit_file  替换文件中首次出现的文本（精确匹配）
-             参数: path (必需), old_text (必需), new_text (必需)
-
-  web_fetch  获取网页内容（Readability + Markdown）
-             参数: url (必需)
-             说明: 获取 URL 的正文内容，转为 Markdown。适合新闻/文章/文档类页面
-
-  web_search 搜索互联网实时信息
-             参数: query (必需), count (可选, 1-10, 默认 5)
-             说明: 返回搜索结果含摘要和链接。需在 .env 中配置 TAVILY_API_KEY`;
+  // Dynamic tool list (fetched from main process)
+  const formatToolList = useCallback((tools: { name: string; description: string; params: string[] }[]) => {
+    const lines = ['可用工具:'];
+    for (const t of tools) {
+      lines.push(`\n  ${t.name.padEnd(16)}${t.description}`);
+      if (t.params.length > 0) {
+        lines.push(`  ${' '.repeat(18)}参数: ${t.params[0]}`);
+      }
+    }
+    return lines.join('\n');
+  }, []);
 
   // Helper: show command result as a pair of chat messages
   const showCommandResult = useCallback((cmdText: string, resultText: string) => {
@@ -225,7 +219,11 @@ export default function AgentView({
             });
           }
         } else if (trimmed === '/tool') {
-          showCommandResult(trimmed, TOOL_LIST_TEXT);
+          getAgentToolList().then((tools) => {
+            showCommandResult(trimmed, formatToolList(tools));
+          }).catch(() => {
+            showCommandResult(trimmed, '获取工具列表失败');
+          });
         } else if (trimmed === '/help') {
           showCommandResult(trimmed, '可用命令:\n' + COMMANDS.map((c) => `  ${c.cmd.padEnd(22)}${c.desc}`).join('\n'));
         } else {
@@ -236,7 +234,7 @@ export default function AgentView({
 
       handleSend();
     }
-  }, [handleSend, inputValue, showCommandResult, suggestion]);
+  }, [handleSend, inputValue, showCommandResult, formatToolList, suggestion]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const el = e.target;
@@ -301,6 +299,13 @@ export default function AgentView({
             ) : (
               sessionMessages.map((msg, idx) => {
                 const isLastAssistant = !isRunning && currentResult && idx === sessionMessages.length - 1 && msg.role === 'assistant';
+                const displayContent = isLastAssistant ? currentResult : msg.content;
+                // Strip app-img:// images from markdown text, render them as direct <img>
+                const imgUrls: string[] = [];
+                const cleanText = displayContent.replace(/!\[.*?\]\((app-img:\/\/\/[^)]+)\)/g, (_: string, url: string) => {
+                  imgUrls.push(url);
+                  return '';
+                }).trim();
                 return msg.role === 'user' ? (
                   <div key={msg.id} className="flex justify-end">
                     <div className="max-w-[75%]">
@@ -316,10 +321,17 @@ export default function AgentView({
                         <AvatarIcon id={agentRole.avatar} size={24} />
                         <span className="font-hand text-sm text-[#2C2C2C]">{agentRole.name}</span>
                       </div>
-                      <div className="markdown-content ml-6">
+                      <div className="ml-6">
+                        {cleanText && (
+                          <div className="markdown-content">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {isLastAssistant ? currentResult : msg.content}
+                              {cleanText}
                             </ReactMarkdown>
+                          </div>
+                        )}
+                        {imgUrls.map((url, i) => (
+                          <img key={i} src={url} alt="generated image" className="max-h-64 w-auto rounded-lg mt-2" style={{ filter: 'url(#tremble)' }} />
+                        ))}
                         {isLastAssistant && currentTrace.length > 0 && (
                           <ReActTrace trace={currentTrace} />
                         )}

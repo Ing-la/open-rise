@@ -39,6 +39,9 @@ interface OpenRiseAPI {
     onError(cb: (data: any) => void): () => void;
     trustAdd(path: string): Promise<{ success: boolean; paths: string[] }>;
     trustList(): Promise<{ paths: string[] }>;
+    capabilitiesLoad(): Promise<any>;
+    capabilitiesSave(config: any): Promise<{ success: boolean }>;
+    toolList(): Promise<{ name: string; description: string; params: string[] }[]>;
   };
 }
 
@@ -166,3 +169,16 @@ export const addTrustedPath = (path: string) =>
 
 export const listTrustedPaths = () =>
   isElectron ? api!.agent.trustList() : Promise.resolve({ paths: [] });
+
+// ── Agent: 多模态能力 ──
+
+export const loadAgentCapabilities = () =>
+  isElectron ? api!.agent.capabilitiesLoad() : Promise.resolve({});
+
+export const saveAgentCapabilities = (config: any) =>
+  isElectron ? api!.agent.capabilitiesSave(config) : Promise.resolve({ success: false });
+
+// ── Agent: 工具列表 ──
+
+export const getAgentToolList = () =>
+  isElectron ? api!.agent.toolList() : Promise.resolve([]);

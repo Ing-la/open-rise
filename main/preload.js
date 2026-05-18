@@ -78,5 +78,12 @@ contextBridge.exposeInMainWorld('openriseAPI', {
     // Trusted paths
     trustAdd:  (path)  => ipcRenderer.invoke('agent:trust-add', path),
     trustList: ()      => ipcRenderer.invoke('agent:trust-list'),
+
+    // Multi-modal capabilities
+    capabilitiesLoad: ()      => ipcRenderer.invoke('agent:capabilities-load'),
+    capabilitiesSave: (cfg)   => ipcRenderer.invoke('agent:capabilities-save', cfg),
+
+    // Tool list
+    toolList: () => ipcRenderer.invoke('agent:tool-list'),
   },
 });

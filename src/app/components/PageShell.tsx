@@ -7,6 +7,7 @@ import CommandCenter from './CommandCenter';
 import ChatView from './ChatView';
 import AgentView from './AgentView';
 import AgentSessionList from './AgentSessionList';
+import AgentCapabilitiesModal from './AgentCapabilitiesModal';
 
 const SIDEBAR_W = 256;
 
@@ -18,6 +19,7 @@ export default function PageShell() {
   const [individuals, setIndividuals] = useState<any[]>([]);
   const [agentSessions, setAgentSessions] = useState<any[]>([]);
   const [agentActiveSessionId, setAgentActiveSessionId] = useState<string | null>(null);
+  const [capabilitiesModalOpen, setCapabilitiesModalOpen] = useState(false);
 
   useEffect(() => {
     listRoles().then(setIndividuals).catch(() => {});
@@ -204,6 +206,20 @@ export default function PageShell() {
               />
             ) : null}
           </div>
+
+          {/* ── Sidebar footer — agent capabilities ── */}
+          {mode === 'agent' && (
+            <div className="shrink-0 px-3 py-3 border-t border-[#2C2C2C]/10">
+              <button
+                onClick={() => setCapabilitiesModalOpen(true)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg font-hand text-sm text-[#2C2C2C]/50 hover:text-[#2C2C2C] hover:bg-[#2C2C2C]/5 transition-all cursor-pointer"
+                type="button"
+              >
+                <span>🔧</span>
+                <span>小帮手</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -248,6 +264,12 @@ export default function PageShell() {
           />
         )}
       </div>
+
+      {/* ── Agent capabilities modal ── */}
+      <AgentCapabilitiesModal
+        isOpen={capabilitiesModalOpen}
+        onClose={() => setCapabilitiesModalOpen(false)}
+      />
     </div>
   );
 }
