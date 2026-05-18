@@ -120,7 +120,6 @@ export default function AgentView({
           });
         },
         onDone: (data) => {
-          streamCleanupRef.current = null;
           setIsRunning(false);
           setProgress('');
           setCurrentResult(data.result || '');
@@ -133,7 +132,6 @@ export default function AgentView({
           onSessionsRefresh();
         },
         onError: (data) => {
-          streamCleanupRef.current = null;
           setIsRunning(false);
           setProgress('');
           setError(data.error || '执行失败');
