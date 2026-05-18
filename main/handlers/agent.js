@@ -254,7 +254,7 @@ async function runAgentLoop(event, sessionId, roleId, content) {
 
       let result;
       try {
-        result = executeTool(toolName, toolArgs);
+        result = await executeTool(toolName, toolArgs);
         traceEntry.output = result.length > 200 ? result.slice(0, 200) + '...' : result;
       } catch (err) {
         result = `Error: ${err.message}`;

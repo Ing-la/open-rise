@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { AvatarIcon } from './AvatarIcon';
 import AgentRolePicker from './AgentRolePicker';
 import ReActTrace from './ReActTrace';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   listAgentMessages,
   sendAgentTask,
@@ -21,11 +23,13 @@ interface AgentViewProps {
   onDeleteSession: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionsRefresh: () => void;
+  onRequestSidebarOpen?: () => void;
 }
 
 export default function AgentView({
   agentRole, onAgentRoleChange,
   sessions, activeSessionId, onCreateSession, onDeleteSession, onSelectSession, onSessionsRefresh,
+  onRequestSidebarOpen,
 }: AgentViewProps) {
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
 
@@ -163,7 +167,15 @@ export default function AgentView({
              参数: path (必需), content (必需)
 
   edit_file  替换文件中首次出现的文本（精确匹配）
-             参数: path (必需), old_text (必需), new_text (必需)`;
+             参数: path (必需), old_text (必需), new_text (必需)
+
+  web_fetch  获取网页内容（Readability + Markdown）
+             参数: url (必需)
+             说明: 获取 URL 的正文内容，转为 Markdown。适合新闻/文章/文档类页面
+
+  web_search 搜索互联网实时信息
+             参数: query (必需), count (可选, 1-10, 默认 5)
+             说明: 返回搜索结果含摘要和链接。需在 .env 中配置 TAVILY_API_KEY`;
 
   // Helper: show command result as a pair of chat messages
   const showCommandResult = useCallback((cmdText: string, resultText: string) => {
@@ -306,10 +318,10 @@ export default function AgentView({
                         <AvatarIcon id={agentRole.avatar} size={24} />
                         <span className="font-hand text-sm text-[#2C2C2C]">{agentRole.name}</span>
                       </div>
-                      <div className="ml-6">
-                        <p className="font-mono text-sm text-[#2C2C2C] leading-relaxed whitespace-pre-wrap">
-                          {isLastAssistant ? currentResult : msg.content}
-                        </p>
+                      <div className="markdown-content ml-6">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {isLastAssistant ? currentResult : msg.content}
+                            </ReactMarkdown>
                         {isLastAssistant && currentTrace.length > 0 && (
                           <ReActTrace trace={currentTrace} />
                         )}
@@ -408,6 +420,13 @@ export default function AgentView({
                   style={{ lineHeight: '24px', maxHeight: '196px', zIndex: 3 }}
                   autoComplete="off"
                 />
+                {!activeSessionId && onRequestSidebarOpen && (
+                  <div
+                    className="absolute inset-0 cursor-pointer"
+                    style={{ zIndex: 10 }}
+                    onClick={() => onRequestSidebarOpen?.()}
+                  />
+                )}
               </div>
             )}
           </div>

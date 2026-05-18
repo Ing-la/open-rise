@@ -101,12 +101,12 @@
 
 | 命令 | 功能 |
 |------|------|
-| `/trace` | 切换 ReAct 过程面板的默认显示状态 |
-| `/compact` | 手动触发记忆压缩 |
-| `/tool list` | 列出当前可用的工具 |
+| `/trust` | 查看信任路径列表 |
+| `/trust add <path>` | 添加信任路径 |
+| `/tool` | 列出当前可用的工具 |
 | `/help` | 显示 Agent 模式帮助 |
 
-实现：提交前拦截 `str.startsWith('/')`，匹配命令表执行本地逻辑。
+实现：提交前拦截 `str.startsWith('/')`，匹配命令表执行本地逻辑。支持 Tab 键自动补全命令。
 
 ---
 
@@ -271,22 +271,42 @@ const TOOL_HANDLERS = {
   'read_file':  require('./read'),
   'write_file': require('./write'),
   'edit_file':  require('./edit'),
+  'web_fetch':  require('./web_fetch'),
+  'web_search': require('./web_search'),
 };
 
-function executeTool(name, args) {
+async function executeTool(name, args) {
   const handler = TOOL_HANDLERS[name];
   if (!handler) throw new Error(`Unknown tool: ${name}`);
-  return handler(args);
+  return await handler(args);
 }
 ```
 
-### v1 工具列表
+executeTool 为 async 函数，统一处理同步工具（文件操作）和异步工具（Web 操作）。
 
-| 工具 | 参数 | 功能 |
-|------|------|------|
-| `read_file` | `path`, `limit?` | 读取文件内容，可选行数限制 |
-| `write_file` | `path`, `content` | 写入文件（覆盖） |
-| `edit_file` | `path`, `old_text`, `new_text` | 编辑文件（精确替换） |
+### 工具列表
+
+| 工具 | 参数 | 功能 | 类型 |
+|------|------|------|------|
+| `read_file` | `path`, `limit?` | 读取文件内容，可选行数限制 | 同步 |
+| `write_file` | `path`, `content` | 写入文件（覆盖，自动创建父目录） | 同步 |
+| `edit_file` | `path`, `old_text`, `new_text` | 编辑文件（精确替换首次匹配） | 同步 |
+| `web_fetch` | `url` | 获取 URL 的正文内容，转为 Markdown | 异步 |
+| `web_search` | `query`, `count?` | 搜索互联网实时信息，返回结果列表 | 异步 |
+
+**web_fetch 详解：**
+- 基于 `@mozilla/readability`（Firefox 阅读模式内核）提取正文
+- `turndown` 将清洗后的 HTML 转为 Markdown
+- `linkedom` 提供 Node.js DOM 环境（轻量替代 jsdom）
+- 处理流程：URL 验证 → HTTP GET（15s 超时）→ 内容类型识别 → Readability 提取 → Turndown 转换 → 结构化输出
+- 无法处理依赖 JavaScript 渲染的页面（SPA），返回清晰提示
+
+**web_search 详解：**
+- 基于 Tavily REST API（专为 Agent 设计的搜索服务）
+- 零 npm 依赖：Node 内置 `fetch` 调用 `POST /search`
+- 认证：`Authorization: Bearer` header
+- 输出：AI 综合摘要 + 结构化结果列表（标题 + 内容摘要 + URL）
+- API key 通过 `.env` 的 `TAVILY_API_KEY` 配置
 
 ### 工具结果截断
 
@@ -435,7 +455,9 @@ main/
 │   ├── safe-path.js                 ← 信任路径校验
 │   ├── read.js                      ← read_file
 │   ├── write.js                     ← write_file
-│   └── edit.js                      ← edit_file
+│   ├── edit.js                      ← edit_file
+│   ├── web_fetch.js                 ← web_fetch（Readability + Turndown + linkedom）
+│   └── web_search.js                ← web_search（Tavily REST API）
 └── memory/                          ← 新增：记忆管理
     ├── chat-compact.js              ← 拆分自 chat 的记忆压缩
     └── agent-compact.js             ← 新增：Agent 三层压缩

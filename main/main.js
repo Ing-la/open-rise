@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const { app, BrowserWindow, ipcMain, protocol, net } = require('electron');
 const path = require('path');
 const serve = require('electron-serve').default;

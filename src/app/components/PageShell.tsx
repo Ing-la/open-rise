@@ -244,6 +244,7 @@ export default function PageShell() {
             onDeleteSession={handleAgentDeleteSession}
             onSelectSession={handleAgentSelectSession}
             onSessionsRefresh={handleAgentSessionsRefresh}
+            onRequestSidebarOpen={toggleSidebar}
           />
         )}
       </div>
