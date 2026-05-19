@@ -37,6 +37,7 @@ interface OpenRiseAPI {
     onTrace(cb: (data: any) => void): () => void;
     onDone(cb: (data: any) => void): () => void;
     onError(cb: (data: any) => void): () => void;
+    getCompactInfo(sessionId: string): Promise<{ summary: string; compactedAt: string; archivePath: string } | null>;
     trustAdd(path: string): Promise<{ success: boolean; paths: string[] }>;
     trustList(): Promise<{ paths: string[] }>;
     capabilitiesLoad(): Promise<any>;
@@ -182,3 +183,8 @@ export const saveAgentCapabilities = (config: any) =>
 
 export const getAgentToolList = () =>
   isElectron ? api!.agent.toolList() : Promise.resolve([]);
+
+// ── Agent: 压缩信息 ──
+
+export const getAgentSessionCompactInfo = (sessionId: string) =>
+  isElectron ? api!.agent.getCompactInfo(sessionId) : Promise.resolve(null);

@@ -131,11 +131,12 @@ Agent 的核心循环，实现于 `main/handlers/agent.js`。
 | `agent:session-create` | 渲染→主进程 | 创建新 session |
 | `agent:session-list` | 渲染→主进程 | 列 session |
 | `agent:session-delete` | 渲染→主进程 | 删 session |
-| `agent:session-messages` | 渲染→主进程 | 加载 session 消息历史 |
+| `agent:session-messages` | 渲染→主进程 | 加载 session 消息历史（含 tool_call 记录） |
 | `agent:trust-add` | 渲染→主进程 | 添加信任路径 |
 | `agent:trust-list` | 渲染→主进程 | 列信任路径 |
 | `agent:capabilities-load` | 渲染→主进程 | 读取 agent-capabilities.json |
 | `agent:capabilities-save` | 渲染→主进程 | 写入 agent-capabilities.json |
+| `agent:session-compact-info` | 渲染→主进程 | 查询 session 压缩摘要 + 归档路径 |
 | `agent:tool-list` | 渲染→主进程 | 获取用户可读的工具列表 |
 
 ### 通信流程
@@ -233,13 +234,15 @@ Agent 以 **session** 为单位管理消息。每次 `agent:send` 创建一个 s
 
 ```prisma
 model AgentSession {
-  id        String   @id @default(uuid())
-  roleId    String
-  title     String   // 自动摘要或用户命名，如 "重构 utils.ts"
-  status    String   @default("active") // "active" | "archived"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  messages  AgentMessage[]
+  id          String     @id @default(uuid())
+  roleId      String
+  title       String     // 自动摘要或用户命名，如 "重构 utils.ts"
+  status      String     @default("active") // "active" | "archived"
+  summary     String?    // LLM 压缩摘要，compactSession 后写入
+  compactedAt DateTime?  // 最后压缩时间
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  messages    AgentMessage[]
 
   @@index([roleId])
 }
@@ -264,7 +267,7 @@ model AgentMessage {
 |------|-------------------|--------------------------------------|
 | 组织单位 | 角色级（roleId） | **Session 级**（sessionId） |
 | 消息角色 | `user` / `assistant` | `user` / `assistant` / `tool_use` / `tool_result` |
-| 压缩策略 | 20000 chars 阈值 + summary | 三层压缩（micro → auto → manual） |
+| 压缩策略 | 20000 chars 阈值 + summary | jsonl 归档 + compactSession + DB 清理 |
 | 存储内容 | 纯文本 | 文本 + 工具调用/结果 |
 | 生命周期 | 永久保存 | 按 session 独立管理，可归档 |
 
@@ -388,26 +391,41 @@ function isPathTrusted(targetPath) {
 
 ## 记忆管理（AgentMemory）
 
-独立于 Chat 的压缩策略，参照 s06 三层模型：
+独立于 Chat 的压缩策略，基于 **持久化压缩** 而非内存替换：
 
-### Layer 1: micro_compact（每次 LLM 调用前静默执行）
+### compactSession（token 超过阈值时触发）
 
-将超过 N 轮之前的 tool_result 替换为占位符 `[Previous: used {tool_name}]`，减少 token 消耗。
+Agent 运行积累 token 估算 > 40,000 时调用 `compactSession(sessionId)`：
 
-### Layer 2: auto_compact（token 超过阈值时触发）
+1. **归档**：将 DB 中该 session 的**全部** `AgentMessage` 逐行 append 到 `prisma/agent-archives/{roleName}-{sessionId}.jsonl`（一个 session 一个文件，多次压缩追加到同一文件）
+2. **总结**：调用 LLM 生成压缩摘要，涵盖 task goal、已完成事项、关键决策、待办事项
+3. **清理**：总结成功后从 DB 删除已归档消息，保留存档完整性
+4. **持久化**：写入 `AgentSession.summary` + `compactedAt`
+5. **继续**：替换 LLM 上下文为 `system + [摘要]`，Agent 继续工作
 
-- 将完整消息转录保存到 `prisma/agent-archives/{roleId}/{timestamp}.jsonl`
-- 调用 LLM 总结对话要点
-- 替换为压缩后的摘要
+总结失败时不删 DB，安全兜底。
 
-### Layer 3: manual_compact（`/compact` 命令触发）
+### 跨重启行为
 
-同 auto_compact，但由用户主动触发。
+- 有 `summary` 且 DB 空 → 前端显示「对话已压缩」提示 + 归档路径
+- 发给 LLM 的上下文：`system + [摘要] + 新消息`
+- 不会重复压缩已归档的内容
+
+### 归档格式
+
+```
+prisma/agent-archives/
+├── 助手A-xxx-sessionId1.jsonl   ← 按行追加，每行一个 JSON
+└── 码农B-yyy-sessionId2.jsonl   ← 完整保留原始消息结构
+```
+
+`.jsonl` 格式选择理由：每行一个完整 JSON（含 `role/type/content/toolId`），机器可还原；append 友好，无需读→改→写回。
+
+### 参数
 
 | 参数 | 值 | 说明 |
 |------|----|------|
-| `MICRO_KEEP_RECENT` | 5 轮 | micro_compact 保留的最近 tool_result 轮数 |
-| `TOKEN_THRESHOLD` | 40000 | auto_compact 触发阈值 |
+| `TOKEN_THRESHOLD` | 40000 | compactSession 触发阈值 |
 | `SUMMARY_MAX_TOKENS` | 1024 | 压缩输出长度上限 |
 
 ---
@@ -463,14 +481,17 @@ Agent 模式的界面与 ChatView 共享 PageShell 骨架，但内容区域和�
 
 ### ReActTrace 组件
 
-可折叠面板，显示 agent 的完整思考-工具调用链：
+可折叠面板，显示 agent 的思考-工具调用链。数据来源有两种：
+- **实时运行中**：通过 `agent:trace` 事件推送的 `currentTrace`
+- **历史加载**：从 DB 中 `type: 'tool_call'` 记录还原（仅保留思考 + 工具名/参数，不显示工具返回内容）
 
-| 元素 | 视觉 |
-|------|------|
-| 思考（thought） | `🤔` 前缀，灰色文字 |
-| 工具调用（tool_use） | `🛠` 前缀，等宽字体显示工具名+参数 |
-| 工具结果（tool_result） | `←` 前缀，截断至 200 字符，可点击展开全文 |
-| 步骤计数 | 右侧小字显示 `3/5` |
+| 元素 | 视觉 | 数据来源 |
+|------|------|----------|
+| 思考（thought） | `🤔` 前缀，灰色文字 | tool_call 记录中的 `thought` |
+| 工具调用（tool_use） | `🛠` 前缀，等宽字体显示工具名+参数 | tool_call 记录中的 `tool_calls[].name + args` |
+| 步骤计数 | 右侧小字显示 `3/5` | 自动累计 |
+
+压缩归档后，历史 tool_call 记录随消息一同从 DB 清理，前端不再显示（顶部显示「对话已压缩」提示 + jsonl 归档路径）。
 
 ---
 

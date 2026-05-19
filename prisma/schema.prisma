@@ -51,13 +51,15 @@ model Message {
 
 // 4. Agent 会话：一次独立的 agent 任务
 model AgentSession {
-  id        String   @id @default(uuid())
-  roleId    String
-  title     String   // 自动摘要或用户命名
-  status    String   @default("active")  // "active" | "archived"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  messages  AgentMessage[]
+  id          String     @id @default(uuid())
+  roleId      String
+  title       String     // 自动摘要或用户命名
+  status      String     @default("active")  // "active" | "archived"
+  summary     String?    // LLM 压缩摘要，autoCompact 后写入
+  compactedAt DateTime?  // 最后压缩时间
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  messages    AgentMessage[]
 
   @@index([roleId])
 }

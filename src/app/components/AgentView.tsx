@@ -13,6 +13,7 @@ import {
   listTrustedPaths,
   addTrustedPath,
   getAgentToolList,
+  getAgentSessionCompactInfo,
 } from '@/lib/api';
 
 interface AgentViewProps {
@@ -45,6 +46,8 @@ export default function AgentView({
   const [error, setError] = useState<string | null>(null);
   const [currentResult, setCurrentResult] = useState<string>('');
   const [currentTrace, setCurrentTrace] = useState<any[]>([]);
+  const [compactInfo, setCompactInfo] = useState<{ summary: string; compactedAt: string; archivePath: string } | null>(null);
+  const [traceMap, setTraceMap] = useState<Map<string, any[]>>(new Map());
 
   // Refs
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -54,9 +57,26 @@ export default function AgentView({
   // ── Load messages when session changes ──
   useEffect(() => {
     if (activeSessionId) {
-      listAgentMessages(activeSessionId).then(setSessionMessages).catch(() => setSessionMessages([]));
+      listAgentMessages(activeSessionId).then((msgs) => {
+        setSessionMessages(msgs);
+        // Build trace map: accumulate tool_call records, attach to NEXT assistant text
+        const map = new Map<string, any[]>();
+        const pending: any[] = [];
+        for (const m of msgs) {
+          if (m.type === 'tool_call') {
+            pending.push(m);
+          } else if (m.type === 'text' && m.role === 'assistant') {
+            map.set(m.id, [...pending]);
+            pending.length = 0;
+          }
+        }
+        setTraceMap(map);
+      }).catch(() => setSessionMessages([]));
+      getAgentSessionCompactInfo(activeSessionId).then(setCompactInfo).catch(() => setCompactInfo(null));
     } else {
       setSessionMessages([]);
+      setTraceMap(new Map());
+      setCompactInfo(null);
     }
   }, [activeSessionId]);
 
@@ -288,58 +308,102 @@ export default function AgentView({
         <div className="flex-1 overflow-y-auto thin-scroll pt-8 pb-4">
           <div className="max-w-2xl mx-auto space-y-6">
             {sessionMessages.length === 0 && !currentResult && !isRunning ? (
-              <div className="flex flex-col items-center justify-center pt-16">
-                <span className="font-hand text-4xl text-[#2C2C2C]/30 select-none" style={{ filter: 'url(#charcoal)' }}>
-                  OpenRise
-                </span>
-                <p className="font-mono text-sm text-[#2C2C2C]/20 mt-2 select-none">
-                  Agent · {agentRole.name}
-                </p>
-              </div>
+              compactInfo ? (
+                <div className="flex flex-col items-center justify-center pt-16 text-center px-4">
+                  <span className="font-hand text-4xl text-[#2C2C2C]/30 select-none" style={{ filter: 'url(#charcoal)' }}>
+                    OpenRise
+                  </span>
+                  <p className="font-mono text-xs text-[#2C2C2C]/30 mt-4 max-w-md leading-relaxed">
+                    对话已压缩，历史消息已归档至：
+                  </p>
+                  <code className="font-mono text-[11px] text-[#2C2C2C]/40 mt-2 break-all bg-paper px-3 py-1.5 rounded border border-[#2C2C2C]/10">
+                    {compactInfo.archivePath}
+                  </code>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center pt-16">
+                  <span className="font-hand text-4xl text-[#2C2C2C]/30 select-none" style={{ filter: 'url(#charcoal)' }}>
+                    OpenRise
+                  </span>
+                  <p className="font-mono text-sm text-[#2C2C2C]/20 mt-2 select-none">
+                    Agent · {agentRole.name}
+                  </p>
+                </div>
+              )
             ) : (
-              sessionMessages.map((msg, idx) => {
-                const isLastAssistant = !isRunning && currentResult && idx === sessionMessages.length - 1 && msg.role === 'assistant';
-                const displayContent = isLastAssistant ? currentResult : msg.content;
-                // Strip app-img:// images from markdown text, render them as direct <img>
-                const imgUrls: string[] = [];
-                const cleanText = displayContent.replace(/!\[.*?\]\((app-img:\/\/\/[^)]+)\)/g, (_: string, url: string) => {
-                  imgUrls.push(url);
-                  return '';
-                }).trim();
-                return msg.role === 'user' ? (
-                  <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[75%]">
-                      <p className="font-mono text-sm text-[#2C2C2C] leading-relaxed whitespace-pre-wrap px-4 py-2.5 bg-paper border border-[#2C2C2C] rounded-xl">
-                        {msg.content}
-                      </p>
-                    </div>
+              <>
+                {/* Compression banner */}
+                {compactInfo && (
+                  <div className="text-center py-2">
+                    <p className="font-mono text-xs text-[#2C2C2C]/30">
+                      对话已压缩 · 历史消息已归档
+                      <span className="ml-1 underline cursor-help" title={compactInfo.archivePath}>jsonl</span>
+                    </p>
                   </div>
-                ) : (
-                  <div key={msg.id} className="flex justify-start">
-                    <div className="max-w-[90%]">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AvatarIcon id={agentRole.avatar} size={24} />
-                        <span className="font-hand text-sm text-[#2C2C2C]">{agentRole.name}</span>
+                )}
+                {(() => {
+                  const displayMessages = sessionMessages.filter(m => m.type === 'text');
+                  return displayMessages.map((msg, idx) => {
+                    const isLastAssistant = !isRunning && currentResult && idx === displayMessages.length - 1 && msg.role === 'assistant';
+                    const displayContent = isLastAssistant ? currentResult : msg.content;
+                    // Strip app-img:// images from markdown text, render them as direct <img>
+                    const imgUrls: string[] = [];
+                    const cleanText = displayContent.replace(/!\[.*?\]\((app-img:\/\/\/[^)]+)\)/g, (_: string, url: string) => {
+                      imgUrls.push(url);
+                      return '';
+                    }).trim();
+                    // Build trace from DB tool_call records
+                    const dbTrace = msg.role === 'assistant' && msg.type === 'text'
+                      ? (traceMap.get(msg.id) || []).map((tc: any) => {
+                          try {
+                            const parsed = JSON.parse(tc.content);
+                            const steps: any[] = [];
+                            let step = 0;
+                            if (parsed.thought) steps.push({ step: ++step, type: 'thought', content: parsed.thought });
+                            for (const call of (parsed.tool_calls || [])) {
+                              steps.push({ step: ++step, type: 'tool_use', name: call.name, input: JSON.parse(call.args || '{}') });
+                            }
+                            return steps;
+                          } catch { return []; }
+                        }).flat()
+                      : [];
+                    const showTrace = isLastAssistant && currentTrace.length > 0 ? currentTrace : dbTrace;
+                    return msg.role === 'user' ? (
+                      <div key={msg.id} className="flex justify-end">
+                        <div className="max-w-[75%]">
+                          <p className="font-mono text-sm text-[#2C2C2C] leading-relaxed whitespace-pre-wrap px-4 py-2.5 bg-paper border border-[#2C2C2C] rounded-xl">
+                            {msg.content}
+                          </p>
+                        </div>
                       </div>
-                      <div className="ml-6">
-                        {cleanText && (
-                          <div className="markdown-content">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {cleanText}
-                            </ReactMarkdown>
+                    ) : (
+                      <div key={msg.id} className="flex justify-start">
+                        <div className="max-w-[90%]">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AvatarIcon id={agentRole.avatar} size={24} />
+                            <span className="font-hand text-sm text-[#2C2C2C]">{agentRole.name}</span>
                           </div>
-                        )}
-                        {imgUrls.map((url, i) => (
-                          <img key={i} src={url} alt="generated image" className="max-h-64 w-auto rounded-lg mt-2" style={{ filter: 'url(#tremble)' }} />
-                        ))}
-                        {isLastAssistant && currentTrace.length > 0 && (
-                          <ReActTrace trace={currentTrace} />
-                        )}
+                          <div className="ml-6">
+                            {cleanText && (
+                              <div className="markdown-content">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {cleanText}
+                                </ReactMarkdown>
+                              </div>
+                            )}
+                            {imgUrls.map((url, i) => (
+                              <img key={i} src={url} alt="generated image" className="max-h-64 w-auto rounded-lg mt-2" style={{ filter: 'url(#tremble)' }} />
+                            ))}
+                            {showTrace.length > 0 && (
+                              <ReActTrace trace={showTrace} />
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                );
-              })
+                    );
+                  });
+                })()}
+              </>
             )}
 
             {/* Current running state */}

@@ -48,6 +48,7 @@ const IPC = {
     SESSION_LIST:   { channel: 'agent:session-list',   params: { roleId: '' }, returns: { sessions: [] } },
     SESSION_DELETE: { channel: 'agent:session-delete', params: { sessionId: '' }, returns: { success: true } },
     SESSION_MESSAGES: { channel: 'agent:session-messages', params: { sessionId: '' }, returns: { messages: [] } },
+    SESSION_COMPACT_INFO: { channel: 'agent:session-compact-info', params: { sessionId: '' }, returns: { summary: '', compactedAt: '', archivePath: '' } },
 
     SEND: { channel: 'agent:send', params: { sessionId: '', roleId: '', content: '' }, note: 'ipcMain.on → 通过 agent:progress/trace/done/error 推送' },
     STOP: { channel: 'agent:stop', params: { sessionId: '' }, note: 'ipcMain.on, 发送中止信号' },
@@ -100,6 +101,7 @@ const PRELOAD_API = {
     onTrace:    'agent:trace',
     onDone:     'agent:done',
     onError:    'agent:error',
+    getCompactInfo: 'agent:session-compact-info',
     trustAdd:  'agent:trust-add',
     trustList: 'agent:trust-list',
   },

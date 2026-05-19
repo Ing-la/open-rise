@@ -47,7 +47,8 @@ contextBridge.exposeInMainWorld('openriseAPI', {
     createSession: (params) => ipcRenderer.invoke('agent:session-create', params),
     listSessions:  (roleId)  => ipcRenderer.invoke('agent:session-list', roleId),
     deleteSession: (id)      => ipcRenderer.invoke('agent:session-delete', id),
-    listMessages:  (id)      => ipcRenderer.invoke('agent:session-messages', id),
+    listMessages:    (id)      => ipcRenderer.invoke('agent:session-messages', id),
+    getCompactInfo:  (id)      => ipcRenderer.invoke('agent:session-compact-info', id),
 
     // Agent loop
     send:     (params) => ipcRenderer.send('agent:send', params),

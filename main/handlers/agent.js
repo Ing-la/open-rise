@@ -2,7 +2,7 @@ const prisma = require('../db');
 const fs = require('fs');
 const path = require('path');
 const { executeTool, TOOL_DEFINITIONS } = require('../tools');
-const { microCompact, autoCompact, shouldCompact } = require('../memory/agent-compact');
+const { compactSession, shouldCompact } = require('../memory/agent-compact');
 
 const CAPABILITIES_PATH = path.join(__dirname, '..', 'agent-capabilities.json');
 
@@ -93,6 +93,14 @@ async function runAgentLoop(event, sessionId, roleId, content) {
   const messages = [];
   messages.push({ role: 'system', content: systemPrompt });
 
+  // If session has been compressed before, prepend summary as context
+  if (session.summary && history.length === 0) {
+    messages.push({
+      role: 'user',
+      content: `[以下为之前会话的压缩摘要]\n\n${session.summary}\n\n请继续完成任务。`,
+    });
+  }
+
   for (const msg of history) {
     if (msg.role === 'user') {
       messages.push({ role: 'user', content: msg.content });
@@ -151,11 +159,19 @@ async function runAgentLoop(event, sessionId, roleId, content) {
       return;
     }
 
-    // Memory compaction
-    microCompact(messages);
+    // Memory compaction: archive to .jsonl + summarize + clean DB
     if (shouldCompact(messages)) {
       event.sender.send('agent:progress', { sessionId, status: 'compacting', message: '正在压缩记忆...' });
-      messages = await autoCompact(messages, sessionId, role.name, brain);
+      const summary = await compactSession(sessionId);
+      if (summary) {
+        // Replace messages with system prompt + summary context for continued work
+        messages.length = 0;
+        messages.push({ role: 'system', content: buildSystemPrompt(role) });
+        messages.push({
+          role: 'user',
+          content: `[对话已压缩，以下为摘要]\n\n${summary}\n\n请继续完成任务。`,
+        });
+      }
       event.sender.send('agent:progress', { sessionId, status: 'thinking', message: '继续工作...' });
     }
 
@@ -361,10 +377,10 @@ module.exports = function (ipcMain) {
     return handleSessionDelete(sessionId);
   });
 
-  // Load displayable messages for a session (user + final assistant text)
+  // Load displayable messages for a session (user + assistant text + tool_call for trace display)
   ipcMain.handle('agent:session-messages', async (_event, sessionId) => {
     const messages = await prisma.agentMessage.findMany({
-      where: { sessionId, role: { in: ['user', 'assistant'] }, type: 'text' },
+      where: { sessionId, role: { in: ['user', 'assistant'] } },
       orderBy: { createdAt: 'asc' },
     });
     return messages;
@@ -409,6 +425,25 @@ module.exports = function (ipcMain) {
   // Multi-modal capabilities
   ipcMain.handle('agent:capabilities-load', async () => {
     return loadCapabilities();
+  });
+
+  // Session compact info (summary + archive path)
+  ipcMain.handle('agent:session-compact-info', async (_event, sessionId) => {
+    const session = await prisma.agentSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session || !session.summary) return null;
+
+    const role = await prisma.role.findUnique({ where: { id: session.roleId } });
+    const safeName = (role?.name || 'unknown').replace(/[^a-zA-Z0-9一-鿿_-]/g, '_');
+    const { getArchiveDir } = require('../memory/agent-compact');
+    const archivePath = require('path').join(getArchiveDir(), `${safeName}-${sessionId}.jsonl`);
+
+    return {
+      summary: session.summary,
+      compactedAt: session.compactedAt,
+      archivePath,
+    };
   });
 
   ipcMain.handle('agent:capabilities-save', async (_event, config) => {
