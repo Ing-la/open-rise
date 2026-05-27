@@ -4,29 +4,18 @@ const { app } = require('electron');
 const prisma = require('../db');
 const { rawHttps } = require('../handlers/image');
 
-const CAPABILITIES_PATH = path.join(__dirname, '..', 'agent-capabilities.json');
-
-function loadCapabilities() {
-  try {
-    return JSON.parse(fs.readFileSync(CAPABILITIES_PATH, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-async function generateImage(args) {
+async function generateImage(args, context = {}) {
   const { prompt, size } = args;
+  const brainId = context.imageBrainId;
+
   if (!prompt || typeof prompt !== 'string') {
     return '错误：需要提供 prompt 参数';
   }
-
-  const caps = loadCapabilities();
-  const imageCfg = caps.image;
-  if (!imageCfg || !imageCfg.brainId) {
+  if (!brainId) {
     return '错误：未配置画图能力。请在 Agent 侧边栏「小帮手」中配置。';
   }
 
-  const brain = await prisma.brain.findUnique({ where: { id: imageCfg.brainId } });
+  const brain = await prisma.brain.findUnique({ where: { id: brainId } });
   if (!brain) {
     return '错误：画图大脑未找到，请重新配置。';
   }

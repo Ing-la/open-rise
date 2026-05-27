@@ -26,10 +26,22 @@ interface OpenRiseAPI {
     onError(cb: (data: { error: string }) => void): () => void;
     list(roleId: string): Promise<any[]>;
   };
+  debate: {
+    start(params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeRoleId: string }): void;
+    stop(): void;
+    list(): Promise<any[]>;
+    get(id: string): Promise<any>;
+    onProgress(cb: (data: { phase: string; speakerRoleId: string; side: string; position: string }) => void): () => void;
+    onMessage(cb: (data: { roleId: string; content: string; tokensUsed: number; done: boolean }) => void): () => void;
+    onDone(cb: (data: { winner: string; scores: any[]; summary: string }) => void): () => void;
+    onError(cb: (data: { error: string }) => void): () => void;
+  };
   agent: {
     createSession(params: { roleId: string; title?: string }): Promise<{ id: string }>;
     listSessions(roleId: string): Promise<any[]>;
     deleteSession(id: string): Promise<{ success: boolean }>;
+    renameSession(id: string, title: string): Promise<{ success: boolean }>;
+    clearSession(sessionId: string): Promise<{ success: boolean }>;
     listMessages(id: string): Promise<any[]>;
     send(params: { sessionId: string; roleId: string; content: string }): void;
     stop(sessionId: string): void;
@@ -127,6 +139,12 @@ export const listAgentSessions = (roleId: string) =>
 export const deleteAgentSession = (id: string) =>
   isElectron ? api!.agent.deleteSession(id) : Promise.resolve({ success: false });
 
+export const renameAgentSession = (sessionId: string, title: string) =>
+  isElectron ? api!.agent.renameSession(sessionId, title) : Promise.resolve({ success: false });
+
+export const clearAgentSession = (sessionId: string) =>
+  isElectron ? api!.agent.clearSession(sessionId) : Promise.resolve({ success: false });
+
 export const listAgentMessages = (sessionId: string) =>
   isElectron ? api!.agent.listMessages(sessionId) : Promise.resolve([]);
 
@@ -181,10 +199,49 @@ export const saveAgentCapabilities = (config: any) =>
 
 // ── Agent: 工具列表 ──
 
-export const getAgentToolList = () =>
-  isElectron ? api!.agent.toolList() : Promise.resolve([]);
+export const getAgentToolList = (roleId: string) =>
+  isElectron ? api!.agent.toolList(roleId) : Promise.resolve([]);
 
 // ── Agent: 压缩信息 ──
 
 export const getAgentSessionCompactInfo = (sessionId: string) =>
   isElectron ? api!.agent.getCompactInfo(sessionId) : Promise.resolve(null);
+
+// ── Debate ──
+
+export interface DebateCallbacks {
+  onProgress?: (data: { phase: string; speakerRoleId: string; side: string; position: string }) => void;
+  onMessage?: (data: { roleId: string; content: string; tokensUsed: number; done: boolean }) => void;
+  onDone?: (data: { winner: string; scores: any[]; summary: string }) => void;
+  onError?: (data: { error: string }) => void;
+}
+
+export function sendDebateStart(
+  params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeRoleId: string },
+  callbacks: DebateCallbacks
+): () => void {
+  if (!isElectron) {
+    callbacks.onError?.({ error: 'No Electron context' });
+    return () => {};
+  }
+
+  const cleanups: (() => void)[] = [];
+  if (callbacks.onProgress) cleanups.push(api!.debate.onProgress(callbacks.onProgress));
+  if (callbacks.onMessage) cleanups.push(api!.debate.onMessage(callbacks.onMessage));
+  if (callbacks.onDone) cleanups.push(api!.debate.onDone(callbacks.onDone));
+  if (callbacks.onError) cleanups.push(api!.debate.onError(callbacks.onError));
+
+  api!.debate.start(params);
+
+  return () => cleanups.forEach((fn) => fn());
+}
+
+export function stopDebate() {
+  if (isElectron) api!.debate.stop();
+}
+
+export const listDebates = () =>
+  isElectron ? api!.debate.list() : Promise.resolve([]);
+
+export const getDebate = (id: string) =>
+  isElectron ? api!.debate.get(id) : Promise.resolve(null);

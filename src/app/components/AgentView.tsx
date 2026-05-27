@@ -14,6 +14,7 @@ import {
   addTrustedPath,
   getAgentToolList,
   getAgentSessionCompactInfo,
+  clearAgentSession,
 } from '@/lib/api';
 
 interface AgentViewProps {
@@ -57,6 +58,11 @@ export default function AgentView({
   // ── Load messages when session changes ──
   useEffect(() => {
     if (activeSessionId) {
+      setCurrentResult('');
+      setCurrentTrace([]);
+      setIsRunning(false);
+      setError(null);
+      setProgress('');
       listAgentMessages(activeSessionId).then((msgs) => {
         setSessionMessages(msgs);
         // Build trace map: accumulate tool_call records, attach to NEXT assistant text
@@ -77,6 +83,11 @@ export default function AgentView({
       setSessionMessages([]);
       setTraceMap(new Map());
       setCompactInfo(null);
+      setCurrentResult('');
+      setCurrentTrace([]);
+      setIsRunning(false);
+      setError(null);
+      setProgress('');
     }
   }, [activeSessionId]);
 
@@ -174,6 +185,7 @@ export default function AgentView({
     { cmd: '/trust', desc: '查看信任路径' },
     { cmd: '/trust add <path>', desc: '添加信任路径' },
     { cmd: '/tool', desc: '查看可用工具列表' },
+    { cmd: '/clear', desc: '清空当前会话内容，保留会话框' },
     { cmd: '/help', desc: '显示此帮助' },
   ];
 
@@ -215,6 +227,8 @@ export default function AgentView({
       // ── In-agent commands ──
       if (trimmed.startsWith('/')) {
         setInputValue('');
+        setCurrentResult('');
+        setCurrentTrace([]);
         if (inputRef.current) inputRef.current.style.height = '';
 
         if (trimmed === '/trust') {
@@ -239,11 +253,24 @@ export default function AgentView({
             });
           }
         } else if (trimmed === '/tool') {
-          getAgentToolList().then((tools) => {
+          getAgentToolList(agentRole?.id).then((tools) => {
             showCommandResult(trimmed, formatToolList(tools));
           }).catch(() => {
             showCommandResult(trimmed, '获取工具列表失败');
           });
+        } else if (trimmed === '/clear') {
+          if (activeSessionId) {
+            clearAgentSession(activeSessionId).then(() => {
+              setSessionMessages([]);
+              setCurrentResult('');
+              setCurrentTrace([]);
+              showCommandResult(trimmed, '会话内容已清空');
+            }).catch(() => {
+              showCommandResult(trimmed, '清空失败');
+            });
+          } else {
+            showCommandResult(trimmed, '没有活动的会话');
+          }
         } else if (trimmed === '/help') {
           showCommandResult(trimmed, '可用命令:\n' + COMMANDS.map((c) => `  ${c.cmd.padEnd(22)}${c.desc}`).join('\n'));
         } else {

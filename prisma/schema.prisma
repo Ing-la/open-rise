@@ -79,3 +79,84 @@ model AgentMessage {
   @@index([sessionId])
 }
 
+// 6. 辩论赛
+model Debate {
+  id          String   @id @default(uuid())
+  proTopic    String   // 正方辩题
+  conTopic    String   // 反方辩题
+  background  String?  // 背景资料
+  summary     String?  // 辩论结束后由裁判 LLM 输出自动生成的摘要
+  status      String   @default("ongoing") // "ongoing" | "completed"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  positions   DebatePosition[]
+  messages    DebateMessage[]
+  scores      DebateScore[]
+  result      DebateResult?
+}
+
+model DebatePosition {
+  id        String @id @default(uuid())
+  debateId  String
+  roleId    String // FK → Role.id
+  side      String // "pro" | "con" | "judge"
+  position  Int    // 1-4（judge 为 0）
+  brainId   String // 冗余存储方便查询
+
+  debate    Debate @relation(fields: [debateId], references: [id], onDelete: Cascade)
+
+  @@index([roleId])
+  @@index([debateId])
+}
+
+model DebateMessage {
+  id          String   @id @default(uuid())
+  debateId    String
+  roleId      String   // 发言者 roleId
+  side        String   // "pro" | "con" | "judge"
+  position    Int      // 1-4（judge 为 0）
+  round       String   // "opening" | "rebuttal" | "cross" | "free" | "closing" | "judging"
+  content     String   // 发言内容
+  tokenCount  Int?     // 该发言消耗的 token 数
+  roundIndex  Int      // 全场第几轮发言
+  createdAt   DateTime @default(now())
+
+  debate      Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
+
+  @@index([debateId, createdAt])
+}
+
+model DebateScore {
+  id              String   @id @default(uuid())
+  debateId        String
+  roleId          String
+  side            String   // "pro" | "con"
+  position        Int      // 1-4
+  scoreContent    Int?     // 内容/论据 (30%)
+  scoreLogic      Int?     // 逻辑/推理 (25%)
+  scoreExpression Int?     // 表达/语言 (20%)
+  scoreRebuttal   Int?     // 反驳/应变 (25%)
+  totalScore      Float?   // 加权总分
+  judgeComment    String?  // 裁判评语
+  createdAt       DateTime @default(now())
+
+  debate          Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
+
+  @@index([debateId])
+}
+
+model DebateResult {
+  id              String   @id @default(uuid())
+  debateId        String   @unique
+  winner          String   // "pro" | "con"
+  bestPro         Int?     // 正方最佳辩手 position
+  bestCon         Int?     // 反方最佳辩手 position
+  overallBest     Int?     // 全场最佳辩手 position
+  bestSide        String?  // "pro" | "con"
+  judgeSummary    String?  // 裁判总结
+  createdAt       DateTime @default(now())
+
+  debate          Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
+}
+

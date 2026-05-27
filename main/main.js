@@ -37,6 +37,7 @@ require('./handlers/role')(ipcMain);
 require('./handlers/chat')(ipcMain);
 require('./handlers/file')(ipcMain);
 require('./handlers/agent')(ipcMain);
+require('./handlers/debate')(ipcMain);
 
 // ── App lifecycle ──
 

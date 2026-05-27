@@ -282,17 +282,19 @@ model AgentMessage {
 ```javascript
 // main/tools/index.js
 const TOOL_HANDLERS = {
-  'read_file':  require('./read'),
-  'write_file': require('./write'),
-  'edit_file':  require('./edit'),
-  'web_fetch':  require('./web_fetch'),
-  'web_search': require('./web_search'),
+  'read_file':      require('./read'),
+  'write_file':     require('./write'),
+  'edit_file':      require('./edit'),
+  'web_fetch':      require('./web_fetch'),
+  'web_search':     require('./web_search'),
+  'generate_image': require('./draw'),
+  'analyze_image':  require('./vision'),
 };
 
-async function executeTool(name, args) {
+async function executeTool(name, args, context = {}) {
   const handler = TOOL_HANDLERS[name];
   if (!handler) throw new Error(`Unknown tool: ${name}`);
-  return await handler(args);
+  return await handler(args, context);
 }
 ```
 
@@ -307,7 +309,8 @@ executeTool 为 async 函数，统一处理同步工具（文件操作）和异�
 | `edit_file` | `path`, `old_text`, `new_text` | 编辑文件（精确替换首次匹配） | 同步 |
 | `web_fetch` | `url` | 获取 URL 的正文内容，转为 Markdown | 异步 |
 | `web_search` | `query`, `count?` | 搜索互联网实时信息，返回结果列表 | 异步 |
-| `generate_image` | `prompt`, `size?` | 文生图。基于 agent-capabilities.json 中配置的画图大脑，支持 DashScope 和标准 OpenAI 兼容 API。返回 `app-img://` 本地路径的 markdown 图片链接。 | 异步 |
+| `generate_image` | `prompt`, `size?` | 文生图。使用角色绑定的画图大脑，通过 context 传递 brainId，支持 DashScope 和标准 OpenAI 兼容 API。返回 `app-img://` 本地路径的 markdown 图片链接。 | 异步 |
+| `analyze_image` | `path`, `prompt` | 图像识别分析。使用角色绑定的视觉大脑，接收本地路径或 `app-img://` 图片，base64 编码后发送给视觉模型分析。返回 AI 分析文本。 | 异步 |
 
 **web_fetch 详解：**
 - 基于 `@mozilla/readability`（Firefox 阅读模式内核）提取正文
@@ -329,31 +332,45 @@ executeTool 为 async 函数，统一处理同步工具（文件操作）和异�
 
 ### 多模态能力动态注册
 
-文件工具（`read_file`/`write_file`/`edit_file`）始终可用；`web_fetch`/`web_search` 始终可用；`generate_image` 需要先在 Agent 侧边栏「小帮手」（`AgentCapabilitiesModal`）中配置画图大脑后才向 LLM 注册。
+文件工具（`read_file`/`write_file`/`edit_file`）始终可用；`web_fetch`/`web_search` 始终可用；`generate_image` 和 `analyze_image` 需要先在 Agent 侧边栏「小帮手」（`AgentCapabilitiesModal`）中为当前角色配置对应大脑后才向 LLM 注册。
+
+**角色级隔离**：每个角色独立配置自己的多模态能力。Role A 配置了画图能力，只有 Role A 的 Agent 能看到 `generate_image` 工具。
+
+支持的能力类型：
+- **`image`** — 文生图，需要 `type` 包含 `image` 的大脑
+- **`vision`** — 图像识别分析，需要 `type` 包含 `vision` 的大脑
 
 实现机制：
 
 ```
-agent-capabilities.json        AgentCapabilitiesModal
-┌─────────────────────┐        ┌──────────────────┐
-│ {                   │        │  类型: image      │
-│   "image": {        │  ──→  │  角色: 画师·XX    │
-│     "roleId": "...",│        │  大脑: 通义万相    │
-│     "brainId": "..."│        └──────────────────┘
-│   }                 │
-│ }                   │        agent.js 加载配置
-└─────────────────────┘        ↓
-                     ┌─────────────────────────┐
-                     │ TOOL_DEFINITIONS 基础工具 │
-                     │ + caps.image?.brainId ?  │
-                     │   generate_image         │
-                     └─────────────────────────┘
+agent-capabilities.json                AgentCapabilitiesModal
+┌─────────────────────────┐            ┌──────────────────┐
+│ {                       │            │  [当前角色名]      │
+│   "role-id-a": {        │   ────    │  类型: image      │
+│     "image": {          │  加载/保存  │  大脑: 通义万相    │
+│       "brainId": "..."  │            │  类型: vision     │
+│     },                  │            │  大脑: GPT-4o     │
+│     "vision": {         │            └──────────────────┘
+│       "brainId": "..."  │
+│     }                   │            agent.js 加载配置
+│   }                     │                 ↓
+│ }                       │    ┌─────────────────────────┐
+└─────────────────────────┘    │ TOOL_DEFINITIONS 基础工具 │
+                               │ + caps[roleId].image?   │
+                               │   generate_image         │
+                               │ + caps[roleId].vision?   │
+                               │   analyze_image          │
+                               └─────────────────────────┘
 ```
 
-- `agent.js` 的 `runAgentLoop` 每次 LLM 调用前调用 `loadCapabilities()` 加载配置
-- 只有 `caps.image?.brainId` 存在时，`generate_image` 的 tool definition 才被推入 tools 数组
-- `main/tools/index.js` 的 `TOOL_HANDLERS` 始终包含 `generate_image` 的实现，但 LLM 只有看到 tool definition 才会调用
-- `draw.js` 根据 `agent-capabilities.json` 中的 `brainId` 查询 Prisma 获取大脑配置，调用对应 API（DashScope 或标准兼容 API）
+- `agent.js` 的 `runAgentLoop` 每次 LLM 调用前调用 `loadCapabilities()` 加载配置，按 `roleId` 取当前角色的能力
+- 只有 `caps[roleId]?.image?.brainId` 存在时，`generate_image` 的 tool definition 才被推入 tools 数组；vision 同理
+- `main/tools/index.js` 的 `TOOL_HANDLERS` 始终包含所有工具的实现，但 LLM 只有看到 tool definition 才会调用
+- brainId 通过 `executeTool(name, args, context)` 的 `context` 参数传入工具，工具不再自己读配置文件
+
+### 旧格式自动迁移
+
+旧版配置为全局格式 `{ "image": { roleId, brainId } }`，新版为角色级 `{ roleId: { "image": { brainId } } }`。`loadCapabilities()` 首次加载时自动检测并迁移旧格式。
 
 ### 信任路径管理
 
@@ -505,7 +522,7 @@ main/
 ├── preload.js                       ← 修改：新增 agent IPC 桥接
 ├── db.js                            ← 不变
 ├── trusted-paths.json               ← 新增：信任路径列表
-├── agent-capabilities.json          ← 新增：多模态能力配置（image 等）
+├── agent-capabilities.json          ← 新增：多模态能力配置（per-role，keyed by roleId）
 ├── handlers/                        ← 新增：从 main.js 拆分
 │   ├── brain.js                     ← 拆分
 │   ├── role.js                      ← 拆分
@@ -513,14 +530,15 @@ main/
 │   ├── image.js                     ← 拆分
 │   └── agent.js                     ← 新增：Agent Loop + IPC handler
 ├── tools/                           ← 新增：Agent 工具集
-│   ├── index.js                     ← 工具注册表（dispatch map）
+│   ├── index.js                     ← 工具注册表（dispatch map，支持 context 传参）
 │   ├── safe-path.js                 ← 信任路径校验
 │   ├── read.js                      ← read_file
 │   ├── write.js                     ← write_file
 │   ├── edit.js                      ← edit_file
 │   ├── web_fetch.js                 ← web_fetch（Readability + Turndown + linkedom）
 │   ├── web_search.js                ← web_search（Tavily REST API）
-│   └── draw.js                      ← 新增：generate_image（多模态能力，读 agent-capabilities.json）
+│   ├── draw.js                      ← generate_image（通过 context.imageBrainId 取大脑配置）
+│   └── vision.js                    ← 新增：analyze_image（图像识别，通过 context.visionBrainId 取大脑配置）
 └── memory/                          ← 新增：记忆管理
     ├── chat-compact.js              ← 拆分自 chat 的记忆压缩
     └── agent-compact.js             ← 新增：Agent 三层压缩

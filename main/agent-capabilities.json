@@ -1,6 +1,17 @@
 {
-  "image": {
-    "roleId": "2660be21-60cf-4296-bd72-62b8233d59f3",
-    "brainId": "5281097a-dba9-4c9c-a6fe-da52a83b80f8"
+  "2660be21-60cf-4296-bd72-62b8233d59f3": {
+    "image": {
+      "brainId": "5281097a-dba9-4c9c-a6fe-da52a83b80f8"
+    }
+  },
+  "46257c63-357c-4088-81b2-d935d6f877f3": {
+    "image": {
+      "brainId": "5281097a-dba9-4c9c-a6fe-da52a83b80f8"
+    }
+  },
+  "cdfb3881-1e52-49e7-8472-5f9cc38a0f2f": {
+    "image": {
+      "brainId": "5281097a-dba9-4c9c-a6fe-da52a83b80f8"
+    }
   }
 }

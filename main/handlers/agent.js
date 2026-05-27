@@ -37,6 +37,16 @@ async function handleSessionDelete(sessionId) {
   return { success: true };
 }
 
+async function handleSessionRename(sessionId, title) {
+  await prisma.agentSession.update({ where: { id: sessionId }, data: { title } });
+  return { success: true };
+}
+
+async function handleSessionClear(sessionId) {
+  await prisma.agentMessage.deleteMany({ where: { sessionId } });
+  return { success: true };
+}
+
 // ── System prompt builder ──
 
 function buildSystemPrompt(role) {
@@ -131,6 +141,19 @@ async function runAgentLoop(event, sessionId, roleId, content) {
     }
   }
 
+  // Remove orphaned tool_calls — assistant(tool_calls) without a following tool response.
+  // These happen when a previous run was interrupted right after saving the tool_call,
+  // leaving no matching tool_result in the database.
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'assistant' && m.tool_calls) {
+      const next = messages[i + 1];
+      if (!next || next.role !== 'tool') {
+        messages.splice(i, 1);
+      }
+    }
+  }
+
   // Add current user message
   messages.push({ role: 'user', content });
 
@@ -175,10 +198,11 @@ async function runAgentLoop(event, sessionId, roleId, content) {
       event.sender.send('agent:progress', { sessionId, status: 'thinking', message: '继续工作...' });
     }
 
-    // Build tool list (base + capabilities)
+    // Build tool list (base + capabilities for this role)
     const tools = [...TOOL_DEFINITIONS];
     const caps = loadCapabilities();
-    if (caps.image?.brainId) {
+    const roleCaps = caps[roleId] || {};
+    if (roleCaps.image?.brainId) {
       tools.push({
         type: 'function',
         function: {
@@ -191,6 +215,23 @@ async function runAgentLoop(event, sessionId, roleId, content) {
               size: { type: 'string', enum: ['1024x1024', '1792x1024', '1024x1792'], description: 'Image size, default 1024x1024' },
             },
             required: ['prompt'],
+          },
+        },
+      });
+    }
+    if (roleCaps.vision?.brainId) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'analyze_image',
+          description: 'Analyze an image using AI vision. Use this when you need to examine, describe, or answer questions about an image file. Supports local file paths and app-img:// URLs.',
+          parameters: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Path to the image file (local path or app-img:// URL)' },
+              prompt: { type: 'string', description: 'Question or instruction about the image (e.g. "What is shown in this image?", "Read the text in this image")' },
+            },
+            required: ['path', 'prompt'],
           },
         },
       });
@@ -301,7 +342,7 @@ async function runAgentLoop(event, sessionId, roleId, content) {
 
       let result;
       try {
-        result = await executeTool(toolName, toolArgs);
+        result = await executeTool(toolName, toolArgs, { roleId, imageBrainId: roleCaps.image?.brainId, visionBrainId: roleCaps.vision?.brainId });
         if (toolName === 'generate_image') lastImageResult = result;
         traceEntry.output = result.length > 200 ? result.slice(0, 200) + '...' : result;
       } catch (err) {
@@ -355,7 +396,24 @@ async function runAgentLoop(event, sessionId, roleId, content) {
 
 function loadCapabilities() {
   try {
-    return JSON.parse(fs.readFileSync(CAPABILITIES_PATH, 'utf-8'));
+    const raw = JSON.parse(fs.readFileSync(CAPABILITIES_PATH, 'utf-8'));
+    // Migrate from old format: { "image": { roleId, brainId } } → { roleId: { "image": { brainId } } }
+    if (raw.image || raw.vision) {
+      const migrated = {};
+      for (const capType of ['image', 'vision']) {
+        const entry = raw[capType];
+        if (entry && entry.roleId && entry.brainId) {
+          const roleId = entry.roleId;
+          if (!migrated[roleId]) migrated[roleId] = {};
+          migrated[roleId][capType] = { brainId: entry.brainId };
+        }
+      }
+      if (Object.keys(migrated).length > 0) {
+        fs.writeFileSync(CAPABILITIES_PATH, JSON.stringify(migrated, null, 2));
+      }
+      return migrated;
+    }
+    return raw;
   } catch {
     return {};
   }
@@ -375,6 +433,14 @@ module.exports = function (ipcMain) {
 
   ipcMain.handle('agent:session-delete', async (_event, sessionId) => {
     return handleSessionDelete(sessionId);
+  });
+
+  ipcMain.handle('agent:session-rename', async (_event, params) => {
+    return handleSessionRename(params.sessionId, params.title);
+  });
+
+  ipcMain.handle('agent:session-clear', async (_event, sessionId) => {
+    return handleSessionClear(sessionId);
   });
 
   // Load displayable messages for a session (user + assistant text + tool_call for trace display)
@@ -459,13 +525,18 @@ module.exports = function (ipcMain) {
     web_fetch:      { name: 'web_fetch',      description: '获取网页正文',        params: ['url（必需）'] },
     web_search:     { name: 'web_search',     description: '搜索互联网',          params: ['query（必需）, count（可选）'] },
     generate_image: { name: 'generate_image', description: '文生图',             params: ['prompt（必需）, size（可选）'] },
+    analyze_image:  { name: 'analyze_image',  description: '图像识别分析',       params: ['path（必需）, prompt（必需）'] },
   };
 
-  ipcMain.handle('agent:tool-list', async () => {
+  ipcMain.handle('agent:tool-list', async (_event, roleId) => {
     const caps = loadCapabilities();
     const list = TOOL_DEFINITIONS.map((t) => TOOL_DISPLAY[t.function.name]).filter(Boolean);
-    if (caps.image?.brainId) {
+    const roleCaps = roleId ? (caps[roleId] || {}) : {};
+    if (roleCaps.image?.brainId) {
       list.push(TOOL_DISPLAY.generate_image);
+    }
+    if (roleCaps.vision?.brainId) {
+      list.push(TOOL_DISPLAY.analyze_image);
     }
     return list;
   });

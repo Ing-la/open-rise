@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { listRoles, loadAgentCapabilities, saveAgentCapabilities } from '@/lib/api';
+import { useState, useEffect, useCallback } from 'react';
+import { listBrains, loadAgentCapabilities, saveAgentCapabilities } from '@/lib/api';
 
 interface AgentCapabilitiesModalProps {
   isOpen: boolean;
   onClose: () => void;
+  agentRoleId: string | null;
+  agentRoleName: string;
 }
 
 const CAPABILITY_TYPES = [
@@ -13,11 +15,18 @@ const CAPABILITY_TYPES = [
   { key: 'vision', label: 'vision' },
 ];
 
-export default function AgentCapabilitiesModal({ isOpen, onClose }: AgentCapabilitiesModalProps) {
+interface CapsConfig {
+  [roleId: string]: {
+    [capType: string]: { brainId: string } | undefined;
+  } | undefined;
+}
+
+export default function AgentCapabilitiesModal({ isOpen, onClose, agentRoleId, agentRoleName }: AgentCapabilitiesModalProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [roles, setRoles] = useState<any[]>([]);
-  const [config, setConfig] = useState<Record<string, { roleId: string; brainId: string } | null>>({});
+  const [brains, setBrains] = useState<any[]>([]);
+  // Per-role config format: { [roleId]: { image: { brainId }, vision: { brainId } } }
+  const [fullConfig, setFullConfig] = useState<CapsConfig>({});
   const [saving, setSaving] = useState(false);
 
   // ── Animation ──
@@ -36,9 +45,9 @@ export default function AgentCapabilitiesModal({ isOpen, onClose }: AgentCapabil
   // ── Load data ──
   useEffect(() => {
     if (!isOpen) return;
-    Promise.all([listRoles(), loadAgentCapabilities()]).then(([rolesData, caps]) => {
-      setRoles(rolesData);
-      setConfig(caps);
+    Promise.all([listBrains(), loadAgentCapabilities()]).then(([brainsData, caps]) => {
+      setBrains(brainsData);
+      setFullConfig(caps || {});
     });
   }, [isOpen]);
 
@@ -60,28 +69,44 @@ export default function AgentCapabilitiesModal({ isOpen, onClose }: AgentCapabil
     [onClose]
   );
 
-  const handleChange = useCallback((type: string, roleId: string) => {
-    if (roleId === '') {
-      setConfig((prev) => ({ ...prev, [type]: null }));
-    } else {
-      const role = roles.find((r) => r.id === roleId);
-      if (role) {
-        setConfig((prev) => ({ ...prev, [type]: { roleId: role.id, brainId: role.brainId } }));
-      }
-    }
-  }, [roles]);
+  const getRoleValue = useCallback(
+    (type: string): string => {
+      if (!agentRoleId) return '';
+      const roleCaps = fullConfig[agentRoleId];
+      return roleCaps?.[type]?.brainId || '';
+    },
+    [fullConfig, agentRoleId]
+  );
+
+  const handleChange = useCallback(
+    (type: string, brainId: string) => {
+      if (!agentRoleId) return;
+      setFullConfig((prev) => {
+        const roleCaps = prev[agentRoleId] || {};
+        if (brainId === '') {
+          // Disable: remove this capability for the role
+          const { [type]: _, ...rest } = roleCaps;
+          const updated = Object.keys(rest).length > 0 ? rest : undefined;
+          return { ...prev, [agentRoleId]: updated };
+        } else {
+          return { ...prev, [agentRoleId]: { ...roleCaps, [type]: { brainId } } };
+        }
+      });
+    },
+    [agentRoleId]
+  );
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      await saveAgentCapabilities(config);
+      await saveAgentCapabilities(fullConfig);
       onClose();
     } catch (err) {
       console.error('Failed to save capabilities:', err);
     } finally {
       setSaving(false);
     }
-  }, [config, onClose]);
+  }, [fullConfig, onClose]);
 
   if (!mounted) return null;
 
@@ -134,87 +159,94 @@ export default function AgentCapabilitiesModal({ isOpen, onClose }: AgentCapabil
             </button>
           </div>
 
-          <p className="font-mono text-xs text-oxblood/40 mb-6">
-            为 Agent 选择多模态工具和能力角色
-          </p>
-
-          {/* ── Capability rows ── */}
-          <div className="space-y-4 mb-8">
-            {CAPABILITY_TYPES.map(({ key, label }) => {
-              const matchingRoles = roles.filter((r) => {
-                const types = (r.brainType || '').split(',').map((t: string) => t.trim());
-                return types.includes(key);
-              });
-              const current = config[key];
-              const selectedId = current ? current.roleId : '';
-
-              // Don't show row if no roles support this capability
-              if (matchingRoles.length === 0) return null;
-
-              return (
-                <div key={key}>
-                  <label className="block font-hand text-base text-oxblood mb-1">{label}</label>
-                  <div className="relative">
-                    <select
-                      value={selectedId}
-                      onChange={(e) => handleChange(key, e.target.value)}
-                      className="w-full bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-oxblood appearance-none cursor-pointer"
-                    >
-                      <option value="">不启用</option>
-                      {matchingRoles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name} · {r.brainName}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true">
-                        <path d="M 1 1 L 6 7 L 11 1" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" filter="url(#tremble)" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="shaky-line w-full mt-1" />
-                </div>
-              );
-            })}
-
-            {CAPABILITY_TYPES.every(({ key }) => {
-              const types = roles.flatMap((r) => (r.brainType || '').split(',').map((t: string) => t.trim()));
-              return !types.includes(key);
-            }) && (
-              <p className="font-mono text-sm text-oxblood/40 text-center py-4">
-                暂无可用的多模态角色。请先在「大脑配置」中添加多模态大脑，并分配给角色。
+          {agentRoleId ? (
+            <>
+              <p className="font-mono text-xs text-oxblood/40 mb-6">
+                <span className="text-oxblood/70">{agentRoleName}</span> 的额外能力配置
               </p>
-            )}
-          </div>
 
-          {/* ── Buttons ── */}
-          <div className="flex items-center justify-end gap-4">
-            <button
-              onClick={onClose}
-              className="relative px-6 py-2 font-hand text-base cursor-pointer select-none"
-              style={{ minWidth: '88px' }}
-              type="button"
-            >
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 42" preserveAspectRatio="none" fill="none" aria-hidden="true">
-                <rect x="2" y="2" width="96" height="38" rx="8" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
-              </svg>
-              <span className="relative text-oxblood">取消</span>
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="relative px-6 py-2 font-hand text-base cursor-pointer select-none disabled:opacity-40"
-              style={{ minWidth: '88px' }}
-              type="button"
-            >
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 42" preserveAspectRatio="none" fill="none" aria-hidden="true">
-                <rect x="2" y="2" width="96" height="38" rx="8" fill="#2C2C2C" />
-                <rect x="2" y="2" width="96" height="38" rx="8" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
-              </svg>
-              <span className="relative text-white">{saving ? '保存中...' : '保存'}</span>
-            </button>
-          </div>
+              {/* ── Capability rows ── */}
+              <div className="space-y-4 mb-8">
+                {CAPABILITY_TYPES.map(({ key, label }) => {
+                  const matchingBrains = brains.filter((b) => {
+                    const types = (b.type || '').split(',').map((t: string) => t.trim());
+                    return types.includes(key);
+                  });
+                  const selectedBrainId = getRoleValue(key);
+
+                  // Don't show row if no brains support this capability
+                  if (matchingBrains.length === 0) return null;
+
+                  return (
+                    <div key={key}>
+                      <label className="block font-hand text-base text-oxblood mb-1">{label}</label>
+                      <div className="relative">
+                        <select
+                          value={selectedBrainId}
+                          onChange={(e) => handleChange(key, e.target.value)}
+                          className="w-full bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-oxblood appearance-none cursor-pointer"
+                        >
+                          <option value="">不启用</option>
+                          {matchingBrains.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name} · {b.modelName}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none">
+                          <svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true">
+                            <path d="M 1 1 L 6 7 L 11 1" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" filter="url(#tremble)" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div className="shaky-line w-full mt-1" />
+                    </div>
+                  );
+                })}
+
+                {CAPABILITY_TYPES.every(({ key }) => {
+                  const types = brains.flatMap((b) => (b.type || '').split(',').map((t: string) => t.trim()));
+                  return !types.includes(key);
+                }) && (
+                  <p className="font-mono text-sm text-oxblood/40 text-center py-4">
+                    暂无可用的多模态大脑。请先在「大脑配置」中添加多模态大脑。
+                  </p>
+                )}
+              </div>
+
+              {/* ── Buttons ── */}
+              <div className="flex items-center justify-end gap-4">
+                <button
+                  onClick={onClose}
+                  className="relative px-6 py-2 font-hand text-base cursor-pointer select-none"
+                  style={{ minWidth: '88px' }}
+                  type="button"
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 42" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                    <rect x="2" y="2" width="96" height="38" rx="8" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+                  </svg>
+                  <span className="relative text-oxblood">取消</span>
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="relative px-6 py-2 font-hand text-base cursor-pointer select-none disabled:opacity-40"
+                  style={{ minWidth: '88px' }}
+                  type="button"
+                >
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 42" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                    <rect x="2" y="2" width="96" height="38" rx="8" fill="#2C2C2C" />
+                    <rect x="2" y="2" width="96" height="38" rx="8" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+                  </svg>
+                  <span className="relative text-white">{saving ? '保存中...' : '保存'}</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="font-mono text-sm text-oxblood/40 text-center py-8">
+              请先选择一个角色再配置能力。
+            </p>
+          )}
         </div>
       </div>
     </div>

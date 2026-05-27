@@ -42,11 +42,23 @@ const IPC = {
     SAVE_DIALOG: { channel: 'file:save-dialog', params: { appImgUrl: '' }, returns: { success: true, savedPath: '' } },
   },
 
+  // ── 辩论 (Debate) ───────────────────────────────────────
+  DEBATE: {
+    START:   { channel: 'debate:start',   params: { topic: '', background: '', proRoles: [], conRoles: [], judgeRoleId: '' }, note: 'ipcMain.on → 通过 debate:progress/message/done/error 推送' },
+    STOP:    { channel: 'debate:stop',    params: {}, note: 'ipcMain.on, 发送中止信号' },
+    PROGRESS:{ channel: 'debate:progress', note: '推送: { phase: string, speakerRoleId: string, side: string, position: string }' },
+    MESSAGE: { channel: 'debate:message', note: '推送: { roleId: string, content: string, tokensUsed: number, done: boolean }' },
+    DONE:    { channel: 'debate:done',    note: '推送: { winner: string, scores: [], summary: string }' },
+    ERROR:   { channel: 'debate:error',   note: '推送: { error: string }' },
+  },
+
   // ── Agent ────────────────────────────────────────────────
   AGENT: {
     SESSION_CREATE: { channel: 'agent:session-create', params: { roleId: '', title: '' }, returns: { id: '' } },
     SESSION_LIST:   { channel: 'agent:session-list',   params: { roleId: '' }, returns: { sessions: [] } },
     SESSION_DELETE: { channel: 'agent:session-delete', params: { sessionId: '' }, returns: { success: true } },
+    SESSION_RENAME: { channel: 'agent:session-rename', params: { sessionId: '', title: '' }, returns: { success: true } },
+    SESSION_CLEAR:  { channel: 'agent:session-clear',  params: { sessionId: '' }, returns: { success: true } },
     SESSION_MESSAGES: { channel: 'agent:session-messages', params: { sessionId: '' }, returns: { messages: [] } },
     SESSION_COMPACT_INFO: { channel: 'agent:session-compact-info', params: { sessionId: '' }, returns: { summary: '', compactedAt: '', archivePath: '' } },
 
@@ -60,6 +72,11 @@ const IPC = {
 
     TRUST_ADD:  { channel: 'agent:trust-add',  params: { path: '' }, returns: { success: true, paths: [] } },
     TRUST_LIST: { channel: 'agent:trust-list', params: {}, returns: { paths: [] } },
+  },
+
+  // ── 工具 (Tool) ────────────────────────────────────────
+  TOOL: {
+    LIST: { channel: 'agent:tool-list', params: { roleId: '' }, returns: { tools: [] } },
   },
 };
 
@@ -91,10 +108,20 @@ const PRELOAD_API = {
     onError: 'chat:error',
     list: 'chat:list',
   },
+  debate: {
+    start:   'debate:start',
+    stop:    'debate:stop',
+    onProgress: 'debate:progress',
+    onMessage:  'debate:message',
+    onDone:     'debate:done',
+    onError:    'debate:error',
+  },
   agent: {
     createSession: 'agent:session-create',
     listSessions:  'agent:session-list',
     deleteSession: 'agent:session-delete',
+    renameSession: 'agent:session-rename',
+    clearSession:  'agent:session-clear',
     send:   'agent:send',
     stop:   'agent:stop',
     onProgress: 'agent:progress',

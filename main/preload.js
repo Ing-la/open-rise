@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('openriseAPI', {
     createSession: (params) => ipcRenderer.invoke('agent:session-create', params),
     listSessions:  (roleId)  => ipcRenderer.invoke('agent:session-list', roleId),
     deleteSession: (id)      => ipcRenderer.invoke('agent:session-delete', id),
+    renameSession: (id, title) => ipcRenderer.invoke('agent:session-rename', { sessionId: id, title }),
+    clearSession:  (id)      => ipcRenderer.invoke('agent:session-clear', id),
     listMessages:    (id)      => ipcRenderer.invoke('agent:session-messages', id),
     getCompactInfo:  (id)      => ipcRenderer.invoke('agent:session-compact-info', id),
 
@@ -85,6 +87,33 @@ contextBridge.exposeInMainWorld('openriseAPI', {
     capabilitiesSave: (cfg)   => ipcRenderer.invoke('agent:capabilities-save', cfg),
 
     // Tool list
-    toolList: () => ipcRenderer.invoke('agent:tool-list'),
+    toolList: (roleId) => ipcRenderer.invoke('agent:tool-list', roleId),
+  },
+  // ── Debate ──
+  debate: {
+    start: (params) => ipcRenderer.send('debate:start', params),
+    stop:  ()      => ipcRenderer.send('debate:stop'),
+    list:  ()      => ipcRenderer.invoke('debate:list'),
+    get:   (id)    => ipcRenderer.invoke('debate:get', id),
+    onProgress: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('debate:progress', h);
+      return () => ipcRenderer.removeListener('debate:progress', h);
+    },
+    onMessage: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('debate:message', h);
+      return () => ipcRenderer.removeListener('debate:message', h);
+    },
+    onDone: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('debate:done', h);
+      return () => ipcRenderer.removeListener('debate:done', h);
+    },
+    onError: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('debate:error', h);
+      return () => ipcRenderer.removeListener('debate:error', h);
+    },
   },
 });

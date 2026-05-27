@@ -4,6 +4,7 @@ const editFile = require('./edit');
 const webFetch = require('./web_fetch');
 const webSearch = require('./web_search');
 const generateImage = require('./draw');
+const analyzeImage = require('./vision');
 
 const TOOL_HANDLERS = {
   read_file: readFile,
@@ -12,6 +13,7 @@ const TOOL_HANDLERS = {
   web_fetch: webFetch,
   web_search: webSearch,
   generate_image: generateImage,
+  analyze_image: analyzeImage,
 };
 
 // OpenAI-compatible tool definitions for the LLM
@@ -95,12 +97,12 @@ const TOOL_DEFINITIONS = [
 
 const MAX_TOOL_RESULT_CHARS = 10000;
 
-async function executeTool(name, args) {
+async function executeTool(name, args, context = {}) {
   const handler = TOOL_HANDLERS[name];
   if (!handler) {
     throw new Error(`Unknown tool: ${name}. Available tools: ${Object.keys(TOOL_HANDLERS).join(', ')}`);
   }
-  let result = await handler(args);
+  let result = await handler(args, context);
   if (typeof result !== 'string') {
     result = JSON.stringify(result);
   }
