@@ -4,31 +4,31 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import DebateSetupModal from './DebateSetupModal';
-import { listRoles, sendDebateStart, stopDebate, listDebates, getDebate } from '@/lib/api';
+import { AvatarIcon } from './AvatarIcon';
+import { listRoles, createDebate, stepDebate, subscribeDebate, stopDebate, listDebates, getDebate, resumeDebate } from '@/lib/api';
 
 // ── Types ──
 type PageMode = 'idle' | 'active' | 'finished';
-type DebaterStatus = 'waiting' | 'speaking' | 'done';
 
 interface DebaterInfo {
   roleId: string;
   roleName: string;
+  avatar?: string;
   side: 'pro' | 'con';
-  position: string;
-  positionNum: number;
-  status: DebaterStatus;
-  totalTokens: number;
+  positionLabel: string; // 一辩/二辩/三辩/四辩
+  status: 'waiting' | 'speaking' | 'done';
 }
 
 interface SpeechEntry {
   roleId: string;
   roleName: string;
+  avatar?: string;
   side: 'pro' | 'con' | 'judge';
   position: string;
   phase: string;
   content: string;
-  tokensUsed: number;
-  tokenBudget: number;
+  charsUsed: number;
+  charBudget: number;
   isStreaming: boolean;
 }
 
@@ -41,83 +41,95 @@ const PHASE_LABELS: Record<string, string> = {
   '总结': '总结陈词',
   '裁判评判': '裁判评判',
 };
-const PHASE_TOKENS: Record<string, number> = {
-  '立论': 700,
-  '驳论': 400,
-  '对辩': 400,
-  '自由辩论': 1600,
-  '总结': 700,
-  '裁判评判': 0,
-};
+const CROSS_FREE_PHASES = ['对辩', '自由辩论'];
 
-// ── Debater Card ──
-function DebaterCard({ debater, isCurrent }: { debater: DebaterInfo; isCurrent: boolean }) {
-  let indicator: string;
-  let indicatorColor: string;
-  if (debater.status === 'speaking') {
-    indicator = '●';
-    indicatorColor = 'text-red-500';
-  } else if (debater.status === 'done') {
-    indicator = '●';
-    indicatorColor = 'text-gray-400';
-  } else {
-    indicator = '●';
-    indicatorColor = 'text-green-500';
-  }
+// ══════════════════════════════════════════════════════════════════
+//  Sub-components
+// ══════════════════════════════════════════════════════════════════
 
+function DebaterAvatar({ debater, isSpeaking }: { debater: DebaterInfo; isSpeaking: boolean }) {
   return (
-    <div
-      className={`p-3 rounded-lg transition-all cursor-default ${
-        isCurrent
-          ? 'bg-[#2C2C2C]/10 ring-1 ring-[#2C2C2C]/30'
-          : 'hover:bg-[#2C2C2C]/5'
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <span className={`text-sm ${indicatorColor} ${debater.status === 'speaking' ? 'animate-pulse' : ''}`}>{indicator}</span>
-        <span className={`font-hand text-sm ${debater.status === 'done' ? 'text-[#2C2C2C]/40' : 'text-[#2C2C2C]'}`}>
-          {debater.position}
-        </span>
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative rounded-full">
+        <AvatarIcon id={debater.avatar ?? ''} size={40} />
       </div>
-      <p className="font-mono text-xs text-[#2C2C2C]/50 mt-0.5 truncate">{debater.roleName || '待分配'}</p>
-      {debater.totalTokens > 0 && (
-        <p className="font-mono text-[9px] text-[#2C2C2C]/25 mt-1">已使用 {debater.totalTokens} tokens</p>
-      )}
+      <span className="font-hand text-sm text-[#2C2C2C] text-center leading-tight">{debater.roleName}</span>
+      <span className="font-mono text-xs text-[#2C2C2C]/40">{debater.positionLabel}</span>
     </div>
   );
 }
 
-// ── Speech Bubble ──
-function SpeechBubble({ speech, isCurrent }: { speech: SpeechEntry; isCurrent: boolean }) {
-  const sideLabel = speech.side === 'pro' ? '正方' : speech.side === 'con' ? '反方' : '裁判';
-  const label = speech.position ? `${sideLabel}${speech.position}` : sideLabel;
+function SpeechBubble({ speech }: { speech: SpeechEntry }) {
+  const isPro = speech.side === 'pro';
+  const isJudge = speech.side === 'judge';
+  const showChars = CROSS_FREE_PHASES.includes(speech.phase);
+
+  if (isJudge) {
+    return (
+      <div className="flex flex-col items-center max-w-[80%] mx-auto">
+        <span className="font-hand text-base text-[#2C2C2C]/60 mb-2">裁判评判</span>
+        <div className="w-full p-4 rounded-xl bg-[#2C2C2C]/4">
+          <div className="prose prose-sm max-w-none font-mono text-sm text-[#2C2C2C]/80 leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{speech.content}</ReactMarkdown>
+            {speech.isStreaming && (
+              <span className="inline-block w-[2px] h-[1em] bg-[#2C2C2C]/60 animate-pulse ml-0.5 align-middle" />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={`p-4 rounded-xl transition-all ${
-        isCurrent
-          ? 'bg-[#2C2C2C]/8 ring-1 ring-[#2C2C2C]/15'
-          : 'bg-[#2C2C2C]/4 hover:bg-[#2C2C2C]/6'
-      }`}
-    >
-      <div className="flex items-center gap-2 mb-2">
-        <span className="font-hand text-sm text-[#2C2C2C] font-bold">{label}</span>
-        <span className="font-mono text-[10px] text-[#2C2C2C]/30">
-          {PHASE_LABELS[speech.phase] || speech.phase}
+    <div className={`flex gap-3 max-w-[80%] ${isPro ? '' : 'ml-auto flex-row-reverse'}`}>
+      <AvatarIcon id={speech.avatar ?? ''} size={36} />
+      <div className="min-w-0 flex-1">
+        <span className={`block font-hand text-base text-[#2C2C2C] mb-1 ${isPro ? '' : 'text-right'}`}>
+          {speech.roleName || (isPro ? '正方' : '反方')} · {speech.position}
         </span>
-      </div>
-      <div className="font-mono text-sm text-[#2C2C2C]/80 leading-relaxed whitespace-pre-wrap prose prose-sm max-w-none">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{speech.content}</ReactMarkdown>
-        {speech.isStreaming && (
-          <span className="inline-block w-[2px] h-[1em] bg-[#2C2C2C]/60 animate-pulse ml-0.5 align-middle" />
+        <div className={`p-4 rounded-xl ${speech.isStreaming ? 'bg-[#2C2C2C]/8 ring-1 ring-[#2C2C2C]/15' : 'bg-[#2C2C2C]/4'}`}>
+          <div className="prose prose-sm max-w-none font-mono text-sm text-[#2C2C2C]/80 leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{speech.content}</ReactMarkdown>
+            {speech.isStreaming && (
+              <span className="inline-block w-[2px] h-[1em] bg-[#2C2C2C]/60 animate-pulse ml-0.5 align-middle" />
+            )}
+          </div>
+        </div>
+        {showChars && speech.charsUsed > 0 && !speech.isStreaming && (
+          <p className={`font-mono text-[10px] text-[#2C2C2C]/25 mt-1 ${isPro ? '' : 'text-right'}`}>
+            已使用 {speech.charsUsed}/{speech.charBudget} 字
+          </p>
         )}
       </div>
-      {speech.tokensUsed > 0 && (
-        <p className="font-mono text-[10px] text-[#2C2C2C]/25 mt-2 text-right">
-          已使用 {speech.tokensUsed} tokens
-          {speech.tokenBudget > 0 && <>（共 {speech.tokenBudget}）</>}
-        </p>
-      )}
+    </div>
+  );
+}
+
+function PromptModal({ system, user, onClose }: { system: string; user: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="本轮输入"
+    >
+      <div className="bg-white rounded-xl shadow-lg max-w-2xl w-[90vw] max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[#2C2C2C]/10">
+          <span className="font-hand text-base text-[#2C2C2C]">本轮 LLM 输入</span>
+          <button onClick={onClose} className="font-mono text-xs text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 cursor-pointer">✕ 关闭</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 thin-scroll">
+          <div>
+            <p className="font-hand text-sm text-[#2C2C2C]/60 mb-1">System Prompt</p>
+            <pre className="font-mono text-xs text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">{system}</pre>
+          </div>
+          <div>
+            <p className="font-hand text-sm text-[#2C2C2C]/60 mb-1">User Message</p>
+            <pre className="font-mono text-xs text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">{user}</pre>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -125,187 +137,226 @@ function SpeechBubble({ speech, isCurrent }: { speech: SpeechEntry; isCurrent: b
 // ══════════════════════════════════════════════════════════════════
 //  Main Component
 // ══════════════════════════════════════════════════════════════════
-export default function DebateView() {
+export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { currentPhase: string; roundIndex: number; debugMode: boolean; hasPrompt: boolean; openPrompt?: () => void }) => void }) {
   const [pageMode, setPageMode] = useState<PageMode>('idle');
   const [setupOpen, setSetupOpen] = useState(false);
+  const [debateId, setDebateId] = useState('');
   const [proTopic, setProTopic] = useState('');
   const [conTopic, setConTopic] = useState('');
-  const [background, setBackground] = useState('');
   const [proDebaters, setProDebaters] = useState<DebaterInfo[]>([]);
   const [conDebaters, setConDebaters] = useState<DebaterInfo[]>([]);
-  const [judgeRoleId, setJudgeRoleId] = useState('');
   const [judgeName, setJudgeName] = useState('');
   const [speeches, setSpeeches] = useState<SpeechEntry[]>([]);
   const [currentPhase, setCurrentPhase] = useState('');
   const [currentSpeakerId, setCurrentSpeakerId] = useState<string | null>(null);
+  const [roundIndex, setRoundIndex] = useState(0);
   const [winner, setWinner] = useState<'pro' | 'con' | null>(null);
-  const [sideTokens, setSideTokens] = useState<{ pro: number; con: number }>({ pro: 0, con: 0 });
+  const [isStepping, setIsStepping] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+  const [latestPrompt, setLatestPrompt] = useState<{ system: string; user: string } | null>(null);
+  const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [debateList, setDebateList] = useState<any[]>([]);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const streamingAccum = useRef('');
   const cleanupRef = useRef<(() => void) | null>(null);
   const streamingSpeechIdx = useRef(-1);
-  const streamingAccum = useRef('');
 
-  // Cleanup IPC listeners on unmount
-  useEffect(() => {
-    return () => cleanupRef.current?.();
-  }, []);
-
-  // Load debate history when entering idle
-  useEffect(() => {
-    if (pageMode === 'idle') {
-      listDebates().then(setDebateList).catch(() => setDebateList([]));
-    }
-  }, [pageMode]);
-
-  // Auto-scroll transcript when speeches change
+  // ── Auto-scroll ──
   useEffect(() => {
     if (transcriptRef.current) {
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
     }
   }, [speeches]);
 
-  // ── Start debate from setup ──
+  // ── Load history on idle ──
+  useEffect(() => {
+    if (pageMode === 'idle') {
+      listDebates().then(setDebateList).catch(() => setDebateList([]));
+    }
+  }, [pageMode]);
+
+  // ── Report phase info to PageShell for top bar ──
+  useEffect(() => {
+    if (pageMode === 'active' && onPhaseInfo) {
+      onPhaseInfo({ currentPhase, roundIndex, debugMode, hasPrompt: !!latestPrompt, openPrompt: () => latestPrompt && setPromptModalOpen(true) });
+    } else if (pageMode !== 'active' && onPhaseInfo) {
+      onPhaseInfo({ currentPhase: '', roundIndex: 0, debugMode: false, hasPrompt: false });
+    }
+  }, [pageMode, currentPhase, roundIndex, debugMode, latestPrompt, onPhaseInfo]);
+
+  // ── Cleanup listeners on unmount ──
+  useEffect(() => {
+    return () => cleanupRef.current?.();
+  }, []);
+
+  // ── Subscribe to debate events ──
+  const subscribe = useCallback((callbacks: {
+    onDelta: (data: any) => void;
+    onPrompt: (data: any) => void;
+    onRoundDone: (data: any) => void;
+    onDone: (data: any) => void;
+    onError: (data: any) => void;
+  }) => {
+    cleanupRef.current?.();
+    const unsub = subscribeDebate({
+      onDelta: callbacks.onDelta,
+      onPrompt: callbacks.onPrompt,
+      onRoundDone: callbacks.onRoundDone,
+      onDone: callbacks.onDone,
+      onError: callbacks.onError,
+    });
+    cleanupRef.current = unsub;
+  }, []);
+
+  // ── Create debate from setup ──
   const handleSetupStart = useCallback(async (params: any) => {
-    cleanupRef.current?.(); // remove any prior listeners
-    streamingSpeechIdx.current = -1;
-    streamingAccum.current = '';
+    try {
+      const { debateId: id } = await createDebate({
+        proTopic: params.proTopic,
+        conTopic: params.conTopic,
+        background: params.background,
+        proRoles: [params.pro1, params.pro2, params.pro3, params.pro4],
+        conRoles: [params.con1, params.con2, params.con3, params.con4],
+        judgeRoleId: params.judge,
+        debugMode: params.debugMode,
+      });
 
-    setProTopic(params.proTopic || '');
-    setConTopic(params.conTopic || '');
-    setBackground(params.background);
+      if (!id) throw new Error('创建辩论失败');
 
-    const roles = await listRoles();
-    const roleMap = new Map(roles.map((r: any) => [r.id, r.name]));
+      // Load role names
+      const roles = await listRoles();
+      const roleMap = new Map(roles.map((r: any) => [r.id, r.name]));
+      const avatarMap = new Map(roles.map((r: any) => [r.id, r.avatar]));
 
-    const proData: DebaterInfo[] = [
-      { roleId: params.pro1, roleName: roleMap.get(params.pro1) || '', side: 'pro', position: '一辩', positionNum: 1, status: 'waiting', totalTokens: 0 },
-      { roleId: params.pro2, roleName: roleMap.get(params.pro2) || '', side: 'pro', position: '二辩', positionNum: 2, status: 'waiting', totalTokens: 0 },
-      { roleId: params.pro3, roleName: roleMap.get(params.pro3) || '', side: 'pro', position: '三辩', positionNum: 3, status: 'waiting', totalTokens: 0 },
-      { roleId: params.pro4, roleName: roleMap.get(params.pro4) || '', side: 'pro', position: '四辩', positionNum: 4, status: 'waiting', totalTokens: 0 },
-    ];
-    const conData: DebaterInfo[] = [
-      { roleId: params.con1, roleName: roleMap.get(params.con1) || '', side: 'con', position: '一辩', positionNum: 1, status: 'waiting', totalTokens: 0 },
-      { roleId: params.con2, roleName: roleMap.get(params.con2) || '', side: 'con', position: '二辩', positionNum: 2, status: 'waiting', totalTokens: 0 },
-      { roleId: params.con3, roleName: roleMap.get(params.con3) || '', side: 'con', position: '三辩', positionNum: 3, status: 'waiting', totalTokens: 0 },
-      { roleId: params.con4, roleName: roleMap.get(params.con4) || '', side: 'con', position: '四辩', positionNum: 4, status: 'waiting', totalTokens: 0 },
-    ];
+      setDebateId(id);
+      setProTopic(params.proTopic);
+      setConTopic(params.conTopic);
+      setDebugMode(!!params.debugMode);
+      setCurrentPhase('立论');
+      setRoundIndex(0);
+      setSpeeches([]);
+      setWinner(null);
+      setCurrentSpeakerId(null);
+      setLatestPrompt(null);
+      streamingAccum.current = '';
+      streamingSpeechIdx.current = -1;
 
-    setProDebaters(proData);
-    setConDebaters(conData);
-    setJudgeRoleId(params.judge);
-    setJudgeName(roleMap.get(params.judge) || '');
-    setSpeeches([]);
-    setCurrentPhase('立论');
-    setCurrentSpeakerId(null);
-    setWinner(null);
-    setSideTokens({ pro: 0, con: 0 });
-    setPageMode('active');
+      setProDebaters([
+        { roleId: params.pro1, roleName: roleMap.get(params.pro1) || '', avatar: avatarMap.get(params.pro1), side: 'pro', positionLabel: '一辩', status: 'waiting' },
+        { roleId: params.pro2, roleName: roleMap.get(params.pro2) || '', avatar: avatarMap.get(params.pro2), side: 'pro', positionLabel: '二辩', status: 'waiting' },
+        { roleId: params.pro3, roleName: roleMap.get(params.pro3) || '', avatar: avatarMap.get(params.pro3), side: 'pro', positionLabel: '三辩', status: 'waiting' },
+        { roleId: params.pro4, roleName: roleMap.get(params.pro4) || '', avatar: avatarMap.get(params.pro4), side: 'pro', positionLabel: '四辩', status: 'waiting' },
+      ]);
+      setConDebaters([
+        { roleId: params.con1, roleName: roleMap.get(params.con1) || '', avatar: avatarMap.get(params.con1), side: 'con', positionLabel: '一辩', status: 'waiting' },
+        { roleId: params.con2, roleName: roleMap.get(params.con2) || '', avatar: avatarMap.get(params.con2), side: 'con', positionLabel: '二辩', status: 'waiting' },
+        { roleId: params.con3, roleName: roleMap.get(params.con3) || '', avatar: avatarMap.get(params.con3), side: 'con', positionLabel: '三辩', status: 'waiting' },
+        { roleId: params.con4, roleName: roleMap.get(params.con4) || '', avatar: avatarMap.get(params.con4), side: 'con', positionLabel: '四辩', status: 'waiting' },
+      ]);
+      setJudgeName(roleMap.get(params.judge) || '');
+      setPageMode('active');
 
-    // Build role-id → display-info lookup (includes judge)
-    const allDebaters = [...proData, ...conData];
-    const nameMap = new Map(allDebaters.map(d => [d.roleId, { roleName: d.roleName, side: d.side as SpeechEntry['side'], position: d.position }]));
-    nameMap.set(params.judge, { roleName: roleMap.get(params.judge) || '', side: 'judge', position: '裁判' });
-
-    const phaseMap: Record<string, string> = {
-      opening: '立论', rebuttal: '驳论', cross: '对辩', free: '自由辩论', closing: '总结', judging: '裁判评判',
-    };
-
-    const cleanup = sendDebateStart({
-      proTopic: params.proTopic,
-      conTopic: params.conTopic,
-      background: params.background,
-      proRoles: [params.pro1, params.pro2, params.pro3, params.pro4],
-      conRoles: [params.con1, params.con2, params.con3, params.con4],
-      judgeRoleId: params.judge,
-    }, {
-      onProgress: (data) => {
-        const cnPhase = phaseMap[data.phase] || data.phase;
-        setCurrentPhase(cnPhase);
-        setCurrentSpeakerId(data.speakerRoleId || null);
-        // Empty speakerRoleId = phase-start signal only, not a speech
-        if (!data.speakerRoleId) return;
-
-        // Update debater card status
-        const sid = data.speakerRoleId;
-        const markSpeaking = (d: DebaterInfo) => ({ ...d, status: (d.roleId === sid ? 'speaking' : d.status) as DebaterStatus });
-        setProDebaters(prev => prev.map(markSpeaking));
-        setConDebaters(prev => prev.map(markSpeaking));
-
-        // Create a new speech entry
-        const info = nameMap.get(sid) || { roleName: '', side: 'judge' as const, position: '裁判' };
-        const entry: SpeechEntry = {
-          roleId: sid,
-          roleName: info.roleName,
-          side: info.side,
-          position: info.position,
-          phase: cnPhase,
-          content: '',
-          tokensUsed: 0,
-          tokenBudget: 0,
-          isStreaming: true,
-        };
-        streamingAccum.current = '';
-        streamingSpeechIdx.current = -1;
-        setSpeeches(prev => {
-          streamingSpeechIdx.current = prev.length;
-          return [...prev, entry];
-        });
-      },
-
-      onMessage: (data) => {
-        if (!data.done) {
-          streamingAccum.current += data.content;
-          setSpeeches(prev => {
-            const idx = streamingSpeechIdx.current;
-            if (idx < 0 || idx >= prev.length) return prev;
-            const copy = [...prev];
-            copy[idx] = { ...copy[idx], content: streamingAccum.current };
-            return copy;
-          });
-        } else {
+      // Subscribe to events
+      const phaseMap: Record<string, string> = {
+        opening: '立论', rebuttal: '驳论', cross: '对辩', free: '自由辩论', closing: '总结', judging: '裁判评判',
+      };
+      subscribe({
+        onDelta: (data) => {
+          if (data.isFirst) {
+            // Create new speech entry
+            streamingAccum.current = '';
+            streamingSpeechIdx.current = -1;
+            const entry: SpeechEntry = {
+              roleId: data.roleId,
+              roleName: data.roleName || '',
+              avatar: avatarMap.get(data.roleId) || undefined,
+              side: data.side || 'judge',
+              position: data.position ? (data.side === 'judge' ? '裁判' : ['', '一辩', '二辩', '三辩', '四辩'][data.position] || '') : '裁判',
+              phase: phaseMap[data.phase] || data.phase || '裁判评判',
+              content: '',
+              charsUsed: 0,
+              charBudget: 0,
+              isStreaming: true,
+            };
+            setSpeeches(prev => {
+              streamingSpeechIdx.current = prev.length;
+              return [...prev, entry];
+            });
+            setCurrentSpeakerId(data.roleId);
+            setCurrentPhase(phaseMap[data.phase] || data.phase || '裁判评判');
+            // Update debater status
+            const markSpeaking = (d: DebaterInfo) => ({ ...d, status: (d.roleId === data.roleId ? 'speaking' : d.status) as DebaterInfo['status'] });
+            setProDebaters(prev => prev.map(markSpeaking));
+            setConDebaters(prev => prev.map(markSpeaking));
+          } else if (data.content) {
+            streamingAccum.current += data.content;
+            setSpeeches(prev => {
+              const idx = streamingSpeechIdx.current;
+              if (idx < 0 || idx >= prev.length) return prev;
+              const copy = [...prev];
+              copy[idx] = { ...copy[idx], content: streamingAccum.current };
+              return copy;
+            });
+          }
+        },
+        onPrompt: (data) => {
+          setLatestPrompt(data);
+        },
+        onRoundDone: (data) => {
           // Finalize speech
           setSpeeches(prev => {
             const idx = streamingSpeechIdx.current;
             if (idx < 0 || idx >= prev.length) return prev;
             const copy = [...prev];
-            copy[idx] = { ...copy[idx], tokensUsed: data.tokensUsed, isStreaming: false };
+            const isCrossFree = CROSS_FREE_PHASES.includes(data.label || data.phase || '');
+            const sideCumulative = data.side === 'pro' ? (data.sideCharsPro || 0) : (data.sideCharsCon || 0);
+            copy[idx] = {
+              ...copy[idx],
+              charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0),
+              charBudget: data.charBudget || 0,
+              isStreaming: false,
+            };
             return copy;
           });
 
-          // Update per-debater token count & mark done
-          const rid = data.roleId;
-          const addTokens = (d: DebaterInfo) =>
-            d.roleId === rid
-              ? { ...d, totalTokens: d.totalTokens + data.tokensUsed, status: 'done' as DebaterStatus }
-              : d;
-          setProDebaters(prev => prev.map(addTokens));
-          setConDebaters(prev => prev.map(addTokens));
+          setRoundIndex(data.roundIndex || 0);
+          setCurrentPhase(data.label || data.phase || '');
 
-          if (data.tokensUsed > 0) {
-            setSideTokens(prev => {
-              if (proData.some(p => p.roleId === rid)) return { ...prev, pro: prev.pro + data.tokensUsed };
-              if (conData.some(c => c.roleId === rid)) return { ...prev, con: prev.con + data.tokensUsed };
-              return prev;
-            });
-          }
-        }
-      },
+          // Update debater status to done
+          const markDone = (d: DebaterInfo) => d.roleId === data.roleId && d.side === data.side
+            ? { ...d, status: 'done' as DebaterInfo['status'] }
+            : d;
+          setProDebaters(prev => prev.map(markDone));
+          setConDebaters(prev => prev.map(markDone));
+          setCurrentSpeakerId(null);
 
-      onDone: (data) => {
-        setWinner(data.winner as 'pro' | 'con');
-        setPageMode('finished');
-        cleanupRef.current = null;
-      },
+          // Enable step button
+          setIsStepping(false);
+        },
+        onDone: (data) => {
+          setWinner(data.winner as 'pro' | 'con');
+          setPageMode('finished');
+          setCurrentSpeakerId(null);
+          setIsStepping(false);
+          cleanupRef.current = null;
+        },
+        onError: (data) => {
+          console.error('[Debate Error]', data.error);
+          setIsStepping(false);
+          cleanupRef.current = null;
+        },
+      });
+    } catch (err) {
+      console.error('[Debate Create]', err);
+    }
+  }, [subscribe]);
 
-      onError: (data) => {
-        console.error('[Debate Error]', data.error);
-        cleanupRef.current = null;
-      },
-    });
-
-    cleanupRef.current = cleanup;
-  }, []);
+  // ── Step (next round) ──
+  const handleStep = useCallback(() => {
+    if (!debateId || isStepping) return;
+    setIsStepping(true);
+    stepDebate(debateId);
+  }, [debateId, isStepping]);
 
   // ── Return to idle ──
   const handleReturnHome = useCallback(() => {
@@ -313,24 +364,27 @@ export default function DebateView() {
     cleanupRef.current = null;
     stopDebate();
     setPageMode('idle');
+    setDebateId('');
     setProTopic('');
     setConTopic('');
-    setBackground('');
     setProDebaters([]);
     setConDebaters([]);
-    setJudgeRoleId('');
     setJudgeName('');
     setSpeeches([]);
     setCurrentPhase('');
     setCurrentSpeakerId(null);
+    setRoundIndex(0);
     setWinner(null);
-    setSideTokens({ pro: 0, con: 0 });
+    setDebugMode(false);
+    setLatestPrompt(null);
+    setPromptModalOpen(false);
+    setIsStepping(false);
   }, []);
 
-  // ── View past debate record ──
-  const handleViewHistory = useCallback(async (debateId: string) => {
+  // ── View history (or resume ongoing) ──
+  const handleViewHistory = useCallback(async (id: string) => {
     try {
-      const debate = await getDebate(debateId);
+      const debate = await getDebate(id);
       if (!debate) return;
 
       const posNames = ['', '一辩', '二辩', '三辩', '四辩'];
@@ -338,73 +392,169 @@ export default function DebateView() {
         opening: '立论', rebuttal: '驳论', cross: '对辩', free: '自由辩论', closing: '总结', judging: '裁判评判',
       };
 
-      const proPositions = debate.positions.filter((p: any) => p.side === 'pro').sort((a: any, b: any) => a.position - b.position);
-      const conPositions = debate.positions.filter((p: any) => p.side === 'con').sort((a: any, b: any) => a.position - b.position);
-      const judgePosition = debate.positions.find((p: any) => p.side === 'judge');
+      const proPos = debate.positions.filter((p: any) => p.side === 'pro').sort((a: any, b: any) => a.position - b.position);
+      const conPos = debate.positions.filter((p: any) => p.side === 'con').sort((a: any, b: any) => a.position - b.position);
 
-      const roleNameMap = new Map(debate.positions.map((p: any) => [p.roleId, p.role?.name || '']));
+      const roles = await listRoles();
+      const nameMap = new Map(roles.map((r: any) => [r.id, r.name]));
+      const avatarMap = new Map(roles.map((r: any) => [r.id, r.avatar]));
 
-      // Token sums per role
-      const tokenSums: Record<string, number> = {};
-      for (const m of debate.messages) {
-        tokenSums[m.roleId] = (tokenSums[m.roleId] || 0) + (m.tokenCount || 0);
-      }
-
+      setDebateId(id);
       setProTopic(debate.proTopic || '');
       setConTopic(debate.conTopic || '');
 
-      setProDebaters(proPositions.map((p: any) => ({
-        roleId: p.roleId, roleName: roleNameMap.get(p.roleId) || '',
-        side: 'pro' as const, position: posNames[p.position] || '',
-        positionNum: p.position, status: 'done' as DebaterStatus,
-        totalTokens: tokenSums[p.roleId] || 0,
+      setProDebaters(proPos.map((p: any) => ({
+        roleId: p.roleId, roleName: nameMap.get(p.roleId) || '', avatar: avatarMap.get(p.roleId),
+        side: 'pro' as const, positionLabel: posNames[p.position] || '', status: 'done' as DebaterInfo['status'],
       })));
-      setConDebaters(conPositions.map((p: any) => ({
-        roleId: p.roleId, roleName: roleNameMap.get(p.roleId) || '',
-        side: 'con' as const, position: posNames[p.position] || '',
-        positionNum: p.position, status: 'done' as DebaterStatus,
-        totalTokens: tokenSums[p.roleId] || 0,
+      setConDebaters(conPos.map((p: any) => ({
+        roleId: p.roleId, roleName: nameMap.get(p.roleId) || '', avatar: avatarMap.get(p.roleId),
+        side: 'con' as const, positionLabel: posNames[p.position] || '', status: 'done' as DebaterInfo['status'],
       })));
-      setJudgeRoleId(judgePosition?.roleId || '');
-      setJudgeName(judgePosition?.role?.name || '');
+      setJudgeName(nameMap.get(debate.positions.find((p: any) => p.side === 'judge')?.roleId || '') || '');
 
-      setSpeeches(debate.messages.map((m: any) => ({
-        roleId: m.roleId, roleName: roleNameMap.get(m.roleId) || '',
-        side: m.side as SpeechEntry['side'],
-        position: m.side === 'judge' ? '裁判' : posNames[m.position] || '',
-        phase: phaseMap[m.round] || m.round,
-        content: m.content, tokensUsed: m.tokenCount || 0, tokenBudget: 0, isStreaming: false,
-      })));
+      const sidebarPhases = new Set(['cross', 'free']);
+      let lastPhase = '';
+      let sidePhaseChars = { pro: 0, con: 0 };
+      const speechesData = debate.messages.map((m: any) => {
+        const isCrossFree = sidebarPhases.has(m.round);
+        if (isCrossFree && m.round !== lastPhase) {
+          sidePhaseChars = { pro: 0, con: 0 };
+          lastPhase = m.round;
+        }
+        if (isCrossFree && (m.side === 'pro' || m.side === 'con')) {
+          const s = m.side as 'pro' | 'con';
+          sidePhaseChars[s] += (m.charCount || m.content.length || 0);
+        }
+        return {
+          roleId: m.roleId, roleName: nameMap.get(m.roleId) || '', avatar: avatarMap.get(m.roleId),
+          side: m.side as SpeechEntry['side'],
+          position: m.side === 'judge' ? '裁判' : posNames[m.position] || '',
+          phase: phaseMap[m.round] || m.round,
+          content: m.content,
+          charsUsed: isCrossFree && (m.side === 'pro' || m.side === 'con') ? sidePhaseChars[m.side as 'pro' | 'con'] : (m.charCount || m.content.length || 0),
+          charBudget: sidebarPhases.has(m.round) ? (m.round === 'cross' ? 300 : 800) : 0,
+          isStreaming: false,
+        };
+      });
 
+      // ── Ongoing → resume ──
+      if (debate.status === 'ongoing') {
+        try {
+          await resumeDebate({ debateId: id, debugMode: !!debate.debugMode });
+        } catch {
+          // If resume fails (e.g. backend doesn't have the new handler yet),
+          // just show as finished
+          setWinner(null);
+          setCurrentPhase('裁判评判');
+          setCurrentSpeakerId(null);
+          setRoundIndex(debate.messages.length);
+          setSpeeches(speechesData);
+          setPageMode('finished');
+          return;
+        }
+
+        setWinner(null);
+        streamingAccum.current = '';
+        streamingSpeechIdx.current = -1;
+        setSpeeches(speechesData);
+        setDebugMode(!!debate.debugMode);
+        setPageMode('active');
+
+        // Re-subscribe for step events
+        const resumePhaseMap = phaseMap;
+        subscribe({
+          onDelta: (data) => {
+            if (data.isFirst) {
+              streamingAccum.current = '';
+              streamingSpeechIdx.current = -1;
+              const entry: SpeechEntry = {
+                roleId: data.roleId, roleName: data.roleName || '',
+                avatar: avatarMap.get(data.roleId) || undefined,
+                side: data.side || 'judge',
+                position: data.position ? (data.side === 'judge' ? '裁判' : posNames[data.position] || '') : '裁判',
+                phase: resumePhaseMap[data.phase] || data.phase || '裁判评判',
+                content: '', charsUsed: 0, charBudget: 0, isStreaming: true,
+              };
+              setSpeeches(prev => { streamingSpeechIdx.current = prev.length; return [...prev, entry]; });
+              setCurrentSpeakerId(data.roleId);
+              setCurrentPhase(resumePhaseMap[data.phase] || data.phase || '裁判评判');
+              const markSpeaking = (d: DebaterInfo) => ({ ...d, status: (d.roleId === data.roleId ? 'speaking' : d.status) as DebaterInfo['status'] });
+              setProDebaters(prev => prev.map(markSpeaking));
+              setConDebaters(prev => prev.map(markSpeaking));
+            } else if (data.content) {
+              streamingAccum.current += data.content;
+              setSpeeches(prev => {
+                const idx = streamingSpeechIdx.current;
+                if (idx < 0 || idx >= prev.length) return prev;
+                const copy = [...prev];
+                copy[idx] = { ...copy[idx], content: streamingAccum.current };
+                return copy;
+              });
+            }
+          },
+          onPrompt: (data) => { setLatestPrompt(data); },
+          onRoundDone: (data) => {
+            setSpeeches(prev => {
+              const idx = streamingSpeechIdx.current;
+              if (idx < 0 || idx >= prev.length) return prev;
+              const copy = [...prev];
+              const isCrossFree = CROSS_FREE_PHASES.includes(data.label || data.phase || '');
+              const sideCumulative = data.side === 'pro' ? (data.sideCharsPro || 0) : (data.sideCharsCon || 0);
+              copy[idx] = { ...copy[idx], charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0), charBudget: data.charBudget || 0, isStreaming: false };
+              return copy;
+            });
+            setRoundIndex(data.roundIndex || 0);
+            setCurrentPhase(data.label || data.phase || '');
+            const markDone = (d: DebaterInfo) => d.roleId === data.roleId && d.side === data.side
+              ? { ...d, status: 'done' as DebaterInfo['status'] } : d;
+            setProDebaters(prev => prev.map(markDone));
+            setConDebaters(prev => prev.map(markDone));
+            setCurrentSpeakerId(null);
+            setIsStepping(false);
+          },
+          onDone: (data) => {
+            setWinner(data.winner as 'pro' | 'con');
+            setPageMode('finished');
+            setCurrentSpeakerId(null);
+            setIsStepping(false);
+            cleanupRef.current = null;
+          },
+          onError: (data) => {
+            console.error('[Debate Error]', data.error);
+            setIsStepping(false);
+            cleanupRef.current = null;
+          },
+        });
+        return;
+      }
+
+      // ── Finished → view only ──
       setWinner(debate.result?.winner || null);
       setCurrentPhase('裁判评判');
       setCurrentSpeakerId(null);
-
-      const proTokens = debate.messages.filter((m: any) => m.side === 'pro').reduce((s: number, m: any) => s + (m.tokenCount || 0), 0);
-      const conTokens = debate.messages.filter((m: any) => m.side === 'con').reduce((s: number, m: any) => s + (m.tokenCount || 0), 0);
-      setSideTokens({ pro: proTokens, con: conTokens });
-
+      setRoundIndex(debate.messages.length);
+      setSpeeches(speechesData);
       setPageMode('finished');
-    } catch { /* ignore */ }
-  }, []);
+    } catch (e) {
+      console.error('[Debate History] 加载失败:', e);
+    }
+  }, [subscribe]);
 
-  // ── Phase index for progress ──
+  // ── Phase index for display ──
   const currentPhaseIndex = PHASE_ORDER.indexOf(currentPhase);
-  const progress = currentPhaseIndex >= 0 ? ((currentPhaseIndex) / PHASE_ORDER.length) * 100 : 0;
 
-  // ── Render ──
+  // ══════════════════════════════════════════════════════════════
+  //  Render
+  // ══════════════════════════════════════════════════════════════
   return (
-    <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      {/* ════════════ IDLE ════════════ */}
       {pageMode === 'idle' && (
-        /* ════════════ IDLE ════════════ */
         <main className="flex-1 flex flex-col items-center justify-center px-4">
           <div className="text-center mb-12">
-            <h2 className="font-hand text-4xl text-[#2C2C2C] mb-3">
-              辩论赛
-            </h2>
-            <p className="font-mono text-sm text-[#2C2C2C]/40">
-              选择 8 位辩手和 1 位裁判，开始一场 AI 辩论赛
-            </p>
+            <h2 className="font-hand text-4xl text-[#2C2C2C] mb-3">辩论赛</h2>
+            <p className="font-mono text-sm text-[#2C2C2C]/40">选择 8 位辩手和 1 位裁判，开始一场 AI 辩论赛</p>
           </div>
 
           <button
@@ -416,13 +566,9 @@ export default function DebateView() {
 
           {/* ── History list ── */}
           <div className="mt-16 w-full max-w-md">
-            <p className="font-hand text-sm text-[#2C2C2C]/30 text-center border-t border-[#2C2C2C]/10 pt-6 mb-3">
-              历史辩论记录
-            </p>
+            <p className="font-hand text-sm text-[#2C2C2C]/30 text-center border-t border-[#2C2C2C]/10 pt-6 mb-3">历史辩论记录</p>
             {debateList.length === 0 ? (
-              <p className="font-mono text-xs text-[#2C2C2C]/20 text-center">
-                暂无辩论记录
-              </p>
+              <p className="font-mono text-xs text-[#2C2C2C]/20 text-center">暂无辩论记录</p>
             ) : (
               <div className="space-y-2 max-h-52 overflow-y-auto thin-scroll">
                 {debateList.map((d: any) => (
@@ -432,9 +578,7 @@ export default function DebateView() {
                     className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#2C2C2C]/5 transition-colors text-left cursor-pointer border border-transparent hover:border-[#2C2C2C]/10"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="font-mono text-sm text-[#2C2C2C] truncate">
-                        {d.proTopic} | {d.conTopic}
-                      </p>
+                      <p className="font-mono text-sm text-[#2C2C2C] truncate">{d.proTopic} | {d.conTopic}</p>
                       <p className="font-mono text-[10px] text-[#2C2C2C]/30 mt-0.5">
                         {new Date(d.createdAt).toLocaleDateString('zh-CN')} · {d._count.messages} 条发言
                       </p>
@@ -450,203 +594,124 @@ export default function DebateView() {
             )}
           </div>
 
-          <DebateSetupModal
-            isOpen={setupOpen}
-            onClose={() => setSetupOpen(false)}
-            onStart={handleSetupStart}
-          />
+          <DebateSetupModal isOpen={setupOpen} onClose={() => setSetupOpen(false)} onStart={handleSetupStart} />
         </main>
       )}
 
+      {/* ════════════ ACTIVE ════════════ */}
       {pageMode === 'active' && (
-        /* ════════════ ACTIVE ════════════ */
-        <div className="flex-1 flex flex-col">
-          {/* ── Top phase bar ── */}
-          <div className="shrink-0 flex items-center gap-4 px-6 py-3 border-b border-[#2C2C2C]/10">
-            <div className="flex items-center gap-2">
-              {PHASE_ORDER.map((p, i) => (
-                <div key={p} className="flex items-center gap-2">
-                  <span
-                    className={`font-mono text-xs transition-colors ${
-                      i === currentPhaseIndex
-                        ? 'text-[#2C2C2C] font-bold'
-                        : i < currentPhaseIndex
-                        ? 'text-[#2C2C2C]/30'
-                        : 'text-[#2C2C2C]/15'
-                    }`}
-                  >
-                    {p}
-                  </span>
-                  {i < PHASE_ORDER.length - 1 && (
-                    <span className="text-[#2C2C2C]/10 text-xs">→</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="flex-1" />
-            <span className="font-mono text-xs text-[#2C2C2C]/30 text-right leading-tight">
-              <span className="text-blue-600/50">正方</span> {proTopic} &nbsp;|&nbsp; <span className="text-red-600/50">反方</span> {conTopic}
-            </span>
-          </div>
-
+        <div className="flex-1 flex flex-col min-h-0">
           {/* ── Three-column body ── */}
           <div className="flex-1 flex overflow-hidden min-h-0">
-            {/* Left: Pro side */}
-            <div className="w-[200px] shrink-0 border-r border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll">
-              <h3 className="font-hand text-base text-[#2C2C2C] text-center mb-3 pb-2 border-b border-[#2C2C2C]/10">
-                正方
-              </h3>
-              <div className="space-y-2">
-                {proDebaters.map((d) => (
-                  <DebaterCard key={d.roleId} debater={d} isCurrent={d.roleId === currentSpeakerId} />
-                ))}
-              </div>
-              {sideTokens.pro > 0 && (
-                <p className="font-mono text-[10px] text-[#2C2C2C]/25 text-center mt-4">
-                  全队已使用 {sideTokens.pro} tokens
-                </p>
+            {/* Left: Pro */}
+            <div className="w-[200px] shrink-0 border-r border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll flex flex-col gap-3">
+              <h3 className="font-hand text-base text-[#2C2C2C] text-center shrink-0">正方</h3>
+              {proTopic && (
+                <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed shrink-0">{proTopic}</p>
               )}
+              {proDebaters.map(d => (
+                <DebaterAvatar key={d.roleId} debater={d} isSpeaking={d.status === 'speaking'} />
+              ))}
             </div>
 
             {/* Center: Transcript */}
-            <div className="flex-1 flex flex-col min-w-0 min-h-0">
-              <div ref={transcriptRef} className="flex-1 overflow-y-auto thin-scroll p-4 space-y-3 min-h-0">
-                {speeches.length === 0 && (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="font-mono text-sm text-[#2C2C2C]/20">等待辩论开始...</p>
-                  </div>
-                )}
-                {speeches.map((s, i) => (
-                  <SpeechBubble
-                    key={i}
-                    speech={s}
-                    isCurrent={i === speeches.length - 1 && s.isStreaming}
-                  />
-                ))}
-              </div>
+            <div ref={transcriptRef} className="flex-1 overflow-y-auto thin-scroll p-4 space-y-5 min-h-0">
+              {speeches.length === 0 && (
+                <div className="flex items-center justify-center h-full">
+                  <p className="font-mono text-sm text-[#2C2C2C]/20">点击「下一步」开始辩论</p>
+                </div>
+              )}
+              {speeches.map((s, i) => (
+                <SpeechBubble key={i} speech={s} />
+              ))}
             </div>
 
-            {/* Right: Con side */}
-            <div className="w-[200px] shrink-0 border-l border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll">
-              <h3 className="font-hand text-base text-[#2C2C2C] text-center mb-3 pb-2 border-b border-[#2C2C2C]/10">
-                反方
-              </h3>
-              <div className="space-y-2">
-                {conDebaters.map((d) => (
-                  <DebaterCard key={d.roleId} debater={d} isCurrent={d.roleId === currentSpeakerId} />
-                ))}
-              </div>
-              {sideTokens.con > 0 && (
-                <p className="font-mono text-[10px] text-[#2C2C2C]/25 text-center mt-4">
-                  全队已使用 {sideTokens.con} tokens
-                </p>
+            {/* Right: Con */}
+            <div className="w-[200px] shrink-0 border-l border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll flex flex-col gap-3">
+              <h3 className="font-hand text-base text-[#2C2C2C] text-center shrink-0">反方</h3>
+              {conTopic && (
+                <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed shrink-0">{conTopic}</p>
               )}
+              {conDebaters.map(d => (
+                <DebaterAvatar key={d.roleId} debater={d} isSpeaking={d.status === 'speaking'} />
+              ))}
             </div>
           </div>
 
           {/* ── Bottom bar ── */}
           <div className="shrink-0 flex items-center gap-4 px-6 py-2.5 border-t border-[#2C2C2C]/10 bg-[#F2F2EE]/80 backdrop-blur-sm">
             <button
-              className="font-mono text-xs text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              disabled
-              title="暂停（开发中）"
+              onClick={handleStep}
+              disabled={isStepping}
+              className="px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-sm hover:bg-[#2C2C2C]/90 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
             >
-              ‖ 暂停
+              {isStepping ? '发言中...' : currentPhaseIndex >= PHASE_ORDER.length - 1 ? '裁判评判' : '下一步 →'}
             </button>
-            <button
-              className="font-mono text-xs text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              disabled
-              title="跳过当前发言（开发中）"
-            >
-              ⏭ 跳过
-            </button>
-
-            {/* ── Progress bar ── */}
-            <div className="flex-1 mx-4">
-              <div className="h-1 bg-[#2C2C2C]/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[#2C2C2C]/30 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(progress, 100)}%` }}
-                />
-              </div>
-            </div>
-
             <span className="font-mono text-[10px] text-[#2C2C2C]/30">
-              {currentPhaseIndex >= 0
-                ? `${PHASE_LABELS[currentPhase]} · ${Math.round(progress)}%`
-                : ''}
+              {currentPhase} · 第 {roundIndex} 轮发言
             </span>
           </div>
         </div>
       )}
 
+      {/* ════════════ FINISHED ════════════ */}
       {pageMode === 'finished' && (
-        /* ════════════ FINISHED ════════════ */
-        <div className="flex-1 flex flex-col">
-          {/* ── Top phase bar (read-only) ── */}
-          <div className="shrink-0 flex items-center gap-4 px-6 py-3 border-b border-[#2C2C2C]/10">
-            {PHASE_ORDER.map((p, i) => (
-              <span key={p} className="font-mono text-xs text-[#2C2C2C]/30">
-                {p}
-                {i < PHASE_ORDER.length - 1 && <span className="ml-2 text-[#2C2C2C]/10">→</span>}
-              </span>
-            ))}
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          {/* Left: Pro */}
+          <div className="w-[200px] shrink-0 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto thin-scroll p-3 space-y-3">
+              <h3 className="font-hand text-lg text-[#2C2C2C] text-center pb-2 border-b border-[#2C2C2C]/10 shrink-0">正方</h3>
+              {proTopic && <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed">{proTopic}</p>}
+              {proDebaters.map(d => (
+                <div key={d.roleId} className="flex flex-col items-center gap-1">
+                  <AvatarIcon id={d.avatar ?? ''} size={40} />
+                  <span className="font-hand text-sm text-[#2C2C2C] text-center leading-tight">{d.roleName}</span>
+                  <span className="font-mono text-xs text-[#2C2C2C]/40">{d.positionLabel}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="flex-1 flex overflow-hidden min-h-0">
-            {/* Left: Pro */}
-            <div className="w-[200px] shrink-0 border-r border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll">
-              <h3 className="font-hand text-base text-[#2C2C2C] text-center mb-3 pb-2 border-b border-[#2C2C2C]/10">
-                正方
-              </h3>
-              <div className="space-y-2">
-                {proDebaters.map((d) => (
-                  <DebaterCard key={d.roleId} debater={d} isCurrent={false} />
-                ))}
-              </div>
+          {/* Center: Transcript */}
+          <div ref={transcriptRef} className="flex-1 overflow-y-auto thin-scroll min-h-0">
+            <div className="mx-4 mt-4 p-4 rounded-xl bg-[#2C2C2C]/5 border border-[#2C2C2C]/10 text-center">
+              <p className="font-hand text-xl text-[#2C2C2C]">辩论结束</p>
+              {winner && <p className="font-hand text-lg text-[#2C2C2C]/70 mt-1">获胜方：{winner === 'pro' ? '正方' : '反方'}</p>}
+              <button
+                onClick={handleReturnHome}
+                className="mt-3 px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-sm hover:bg-[#2C2C2C]/90 transition-colors cursor-pointer active:scale-[0.98]"
+              >
+                返回
+              </button>
             </div>
 
-            {/* Center: Transcript + Winner */}
-            <div className="flex-1 flex flex-col min-w-0 min-h-0">
-              {/* ── Winner banner ── */}
-              <div className="shrink-0 mx-4 mt-4 p-4 rounded-xl bg-[#2C2C2C]/5 border border-[#2C2C2C]/10 text-center">
-                <p className="font-hand text-xl text-[#2C2C2C]">
-                  辩论结束
-                </p>
-                {winner && (
-                  <p className="font-hand text-lg text-[#2C2C2C]/70 mt-1">
-                    获胜方：{winner === 'pro' ? '正方' : '反方'}
-                  </p>
-                )}
-                <button
-                  onClick={handleReturnHome}
-                  className="mt-3 px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-sm hover:bg-[#2C2C2C]/90 transition-colors cursor-pointer active:scale-[0.98]"
-                >
-                  返回
-                </button>
-              </div>
-
-              {/* ── Transcript ── */}
-              <div ref={transcriptRef} className="flex-1 overflow-y-auto thin-scroll p-4 space-y-3 min-h-0">
-                {speeches.map((s, i) => (
-                  <SpeechBubble key={i} speech={s} isCurrent={false} />
-                ))}
-              </div>
+            <div className="p-4 space-y-5">
+              {speeches.map((s, i) => (
+                <SpeechBubble key={i} speech={s} />
+              ))}
             </div>
+          </div>
 
-            {/* Right: Con */}
-            <div className="w-[200px] shrink-0 border-l border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll">
-              <h3 className="font-hand text-base text-[#2C2C2C] text-center mb-3 pb-2 border-b border-[#2C2C2C]/10">
-                反方
-              </h3>
-              <div className="space-y-2">
-                {conDebaters.map((d) => (
-                  <DebaterCard key={d.roleId} debater={d} isCurrent={false} />
-                ))}
-              </div>
+          {/* Right: Con */}
+          <div className="w-[200px] shrink-0 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto thin-scroll p-3 space-y-3">
+              <h3 className="font-hand text-lg text-[#2C2C2C] text-center pb-2 border-b border-[#2C2C2C]/10 shrink-0">反方</h3>
+              {conTopic && <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed">{conTopic}</p>}
+              {conDebaters.map(d => (
+                <div key={d.roleId} className="flex flex-col items-center gap-1">
+                  <AvatarIcon id={d.avatar ?? ''} size={40} />
+                  <span className="font-hand text-sm text-[#2C2C2C] text-center leading-tight">{d.roleName}</span>
+                  <span className="font-mono text-xs text-[#2C2C2C]/40">{d.positionLabel}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Prompt modal (debug mode) ── */}
+      {promptModalOpen && latestPrompt && (
+        <PromptModal system={latestPrompt.system} user={latestPrompt.user} onClose={() => setPromptModalOpen(false)} />
       )}
     </div>
   );

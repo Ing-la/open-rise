@@ -27,14 +27,17 @@ interface OpenRiseAPI {
     list(roleId: string): Promise<any[]>;
   };
   debate: {
-    start(params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeRoleId: string }): void;
+    create(params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeRoleId: string; debugMode?: boolean }): Promise<{ debateId: string }>;
+    resume(params: { debateId: string; debugMode?: boolean }): Promise<{ debateId: string }>;
+    step(params: { debateId: string }): void;
     stop(): void;
     list(): Promise<any[]>;
     get(id: string): Promise<any>;
-    onProgress(cb: (data: { phase: string; speakerRoleId: string; side: string; position: string }) => void): () => void;
-    onMessage(cb: (data: { roleId: string; content: string; tokensUsed: number; done: boolean }) => void): () => void;
-    onDone(cb: (data: { winner: string; scores: any[]; summary: string }) => void): () => void;
-    onError(cb: (data: { error: string }) => void): () => void;
+    onDelta(cb: (data: any) => void): () => void;
+    onPrompt(cb: (data: any) => void): () => void;
+    onRoundDone(cb: (data: any) => void): () => void;
+    onDone(cb: (data: any) => void): () => void;
+    onError(cb: (data: any) => void): () => void;
   };
   agent: {
     createSession(params: { roleId: string; title?: string }): Promise<{ id: string }>;
@@ -54,7 +57,7 @@ interface OpenRiseAPI {
     trustList(): Promise<{ paths: string[] }>;
     capabilitiesLoad(): Promise<any>;
     capabilitiesSave(config: any): Promise<{ success: boolean }>;
-    toolList(): Promise<{ name: string; description: string; params: string[] }[]>;
+    toolList(roleId?: string): Promise<{ name: string; description: string; params: string[] }[]>;
   };
 }
 
@@ -210,34 +213,49 @@ export const getAgentSessionCompactInfo = (sessionId: string) =>
 // ── Debate ──
 
 export interface DebateCallbacks {
-  onProgress?: (data: { phase: string; speakerRoleId: string; side: string; position: string }) => void;
-  onMessage?: (data: { roleId: string; content: string; tokensUsed: number; done: boolean }) => void;
+  onDelta?: (data: { roleId: string; roleName?: string; content: string; phase?: string; side?: string; position?: number | string; isFirst?: boolean }) => void;
+  onPrompt?: (data: { system: string; user: string }) => void;
+  onRoundDone?: (data: { phase: string; side: string; position: number | string; label: string; roleId: string; roleName: string; content: string; charsUsed: number; charBudget: number; roundIndex: number; sideCharsPro?: number; sideCharsCon?: number }) => void;
   onDone?: (data: { winner: string; scores: any[]; summary: string }) => void;
   onError?: (data: { error: string }) => void;
 }
 
-export function sendDebateStart(
-  params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeRoleId: string },
-  callbacks: DebateCallbacks
-): () => void {
+export function createDebate(params: {
+  proTopic: string; conTopic: string; background: string;
+  proRoles: string[]; conRoles: string[]; judgeRoleId: string;
+  debugMode?: boolean;
+}): Promise<{ debateId: string }> {
+  if (!isElectron) return Promise.resolve({ debateId: '' });
+  return api!.debate.create(params);
+}
+
+export function resumeDebate(params: { debateId: string; debugMode?: boolean }): Promise<{ debateId: string }> {
+  if (!isElectron) return Promise.resolve({ debateId: '' });
+  return api!.debate.resume(params);
+}
+
+export function stepDebate(debateId: string) {
+  if (isElectron) api!.debate.step({ debateId });
+}
+
+export function stopDebate() {
+  if (isElectron) api!.debate.stop();
+}
+
+export function subscribeDebate(callbacks: DebateCallbacks): () => void {
   if (!isElectron) {
     callbacks.onError?.({ error: 'No Electron context' });
     return () => {};
   }
 
   const cleanups: (() => void)[] = [];
-  if (callbacks.onProgress) cleanups.push(api!.debate.onProgress(callbacks.onProgress));
-  if (callbacks.onMessage) cleanups.push(api!.debate.onMessage(callbacks.onMessage));
+  if (callbacks.onDelta) cleanups.push(api!.debate.onDelta(callbacks.onDelta));
+  if (callbacks.onPrompt) cleanups.push(api!.debate.onPrompt(callbacks.onPrompt));
+  if (callbacks.onRoundDone) cleanups.push(api!.debate.onRoundDone(callbacks.onRoundDone));
   if (callbacks.onDone) cleanups.push(api!.debate.onDone(callbacks.onDone));
   if (callbacks.onError) cleanups.push(api!.debate.onError(callbacks.onError));
 
-  api!.debate.start(params);
-
   return () => cleanups.forEach((fn) => fn());
-}
-
-export function stopDebate() {
-  if (isElectron) api!.debate.stop();
 }
 
 export const listDebates = () =>

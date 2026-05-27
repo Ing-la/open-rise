@@ -25,6 +25,7 @@ export default function PageShell() {
   const [brainOpen, setBrainOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const [capabilitiesModalOpen, setCapabilitiesModalOpen] = useState(false);
+  const [debatePhaseInfo, setDebatePhaseInfo] = useState<{ currentPhase: string; roundIndex: number; debugMode: boolean; hasPrompt: boolean; openPrompt?: () => void }>({ currentPhase: '', roundIndex: 0, debugMode: false, hasPrompt: false });
 
   useEffect(() => {
     listRoles().then(setIndividuals).catch(() => {});
@@ -125,7 +126,8 @@ export default function PageShell() {
           Fixed top bar
           ════════════════════════════════════════════ */}
       <div className="fixed top-0 left-0 right-0 z-50 h-12 flex items-center px-10">
-        {/* ── ≡ ── */}
+        {/* ── ≡ (hidden in debate) ── */}
+        {mode !== 'debate' && (
         <button
           onClick={toggleSidebar}
           className="w-8 h-8 flex items-center justify-center cursor-pointer focus:outline-none"
@@ -135,6 +137,7 @@ export default function PageShell() {
             <path d="M 4 6 L 20 6 M 4 12 L 20 12 M 4 18 L 20 18" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" filter="url(#tremble)" />
           </svg>
         </button>
+        )}
 
         {/* ── Person name — centered ── */}
         {mode === 'chat' && selectedPerson && (
@@ -165,8 +168,41 @@ export default function PageShell() {
           </div>
         )}
 
-        {/* ── OpenRise ── */}
-        <div className="ml-auto">
+        {/* ── Debate mode ── */}
+        {mode === 'debate' && (
+          <>
+            {/* Left: phase status */}
+            {debatePhaseInfo.currentPhase && (
+              <div className="flex items-center gap-3 max-w-[50%] overflow-hidden">
+                {['立论', '驳论', '对辩', '自由辩论', '总结', '裁判评判'].map((p, i) => {
+                  const idx = ['立论', '驳论', '对辩', '自由辩论', '总结', '裁判评判'].indexOf(debatePhaseInfo.currentPhase);
+                  return (
+                    <span key={p} className={`font-mono text-xs whitespace-nowrap ${i === idx ? 'text-[#2C2C2C] font-bold' : i < idx ? 'text-[#2C2C2C]/30' : 'text-[#2C2C2C]/15'}`}>
+                      {i > 0 && <span className="mx-1 text-[#2C2C2C]/10">→</span>}{p}
+                    </span>
+                  );
+                })}
+                <span className="font-mono text-[10px] text-[#2C2C2C]/30 ml-2">第 {debatePhaseInfo.roundIndex} 轮</span>
+              </div>
+            )}
+
+            {/* Center: 辩论赛 */}
+            <div className="absolute left-1/2 -translate-x-1/2">
+              <span className="font-hand text-lg text-[#2C2C2C]">辩论赛</span>
+            </div>
+          </>
+        )}
+
+        {/* ── OpenRise + debug prompt button ── */}
+        <div className="ml-auto flex items-center gap-3">
+          {debatePhaseInfo.openPrompt && (debatePhaseInfo.hasPrompt || debatePhaseInfo.debugMode) && (
+            <button
+              onClick={debatePhaseInfo.openPrompt}
+              className="font-mono text-[11px] text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 transition-colors cursor-pointer"
+            >
+              查看输入
+            </button>
+          )}
           {mode !== 'home' ? (
             <button
               onClick={exitToHome}
@@ -185,8 +221,9 @@ export default function PageShell() {
       </div>
 
       {/* ════════════════════════════════════════════
-          Sidebar
+          Sidebar (hidden in debate)
           ════════════════════════════════════════════ */}
+      {mode !== 'debate' && (
       <div
         className={`overflow-hidden transition-all duration-200 ease-out ${
           mode === 'home' ? 'absolute left-0 top-0 bottom-0 z-40' : 'h-full shrink-0'
@@ -276,7 +313,7 @@ export default function PageShell() {
             </div>
           )}
         </div>
-      </div>
+      </div>)}
 
       {/* ════════════════════════════════════════════
           Main Content
@@ -306,7 +343,7 @@ export default function PageShell() {
 
         {/* ─── Debate ─── */}
         {mode === 'debate' && (
-          <DebateView />
+          <DebateView onPhaseInfo={setDebatePhaseInfo} />
         )}
 
         {/* ─── Agent ─── */}

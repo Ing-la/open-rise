@@ -91,19 +91,26 @@ contextBridge.exposeInMainWorld('openriseAPI', {
   },
   // ── Debate ──
   debate: {
-    start: (params) => ipcRenderer.send('debate:start', params),
-    stop:  ()      => ipcRenderer.send('debate:stop'),
-    list:  ()      => ipcRenderer.invoke('debate:list'),
-    get:   (id)    => ipcRenderer.invoke('debate:get', id),
-    onProgress: (cb) => {
+    create: (params) => ipcRenderer.invoke('debate:create', params),
+    resume: (params) => ipcRenderer.invoke('debate:resume', params),
+    step:   (params) => ipcRenderer.send('debate:step', params),
+    stop:   ()       => ipcRenderer.send('debate:stop'),
+    list:   ()       => ipcRenderer.invoke('debate:list'),
+    get:    (id)     => ipcRenderer.invoke('debate:get', id),
+    onDelta: (cb) => {
       const h = (_e, d) => cb(d);
-      ipcRenderer.on('debate:progress', h);
-      return () => ipcRenderer.removeListener('debate:progress', h);
+      ipcRenderer.on('debate:delta', h);
+      return () => ipcRenderer.removeListener('debate:delta', h);
     },
-    onMessage: (cb) => {
+    onPrompt: (cb) => {
       const h = (_e, d) => cb(d);
-      ipcRenderer.on('debate:message', h);
-      return () => ipcRenderer.removeListener('debate:message', h);
+      ipcRenderer.on('debate:prompt', h);
+      return () => ipcRenderer.removeListener('debate:prompt', h);
+    },
+    onRoundDone: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('debate:round_done', h);
+      return () => ipcRenderer.removeListener('debate:round_done', h);
     },
     onDone: (cb) => {
       const h = (_e, d) => cb(d);

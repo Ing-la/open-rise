@@ -85,6 +85,7 @@ model Debate {
   proTopic    String   // 正方辩题
   conTopic    String   // 反方辩题
   background  String?  // 背景资料
+  debugMode   Boolean  @default(false) // 调试模式
   summary     String?  // 辩论结束后由裁判 LLM 输出自动生成的摘要
   status      String   @default("ongoing") // "ongoing" | "completed"
   createdAt   DateTime @default(now())
@@ -118,7 +119,8 @@ model DebateMessage {
   position    Int      // 1-4（judge 为 0）
   round       String   // "opening" | "rebuttal" | "cross" | "free" | "closing" | "judging"
   content     String   // 发言内容
-  tokenCount  Int?     // 该发言消耗的 token 数
+  tokenCount  Int?     // 该发言消耗的 token 数（仅供参考，编排逻辑已改用字数）
+  charCount   Int?     // 发言的实际字数（用于编排判定）
   roundIndex  Int      // 全场第几轮发言
   createdAt   DateTime @default(now())
 

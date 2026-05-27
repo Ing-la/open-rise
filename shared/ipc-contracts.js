@@ -44,12 +44,17 @@ const IPC = {
 
   // ── 辩论 (Debate) ───────────────────────────────────────
   DEBATE: {
-    START:   { channel: 'debate:start',   params: { topic: '', background: '', proRoles: [], conRoles: [], judgeRoleId: '' }, note: 'ipcMain.on → 通过 debate:progress/message/done/error 推送' },
+    CREATE:  { channel: 'debate:create',  params: { proTopic: '', conTopic: '', background: '', proRoles: [], conRoles: [], judgeRoleId: '', debugMode: false }, returns: { debateId: '' } },
+    RESUME:  { channel: 'debate:resume',  params: { debateId: '', debugMode: false }, returns: { debateId: '' } },
+    STEP:    { channel: 'debate:step',    params: { debateId: '' }, note: 'ipcMain.on → 通过 debate:delta/prompt/round_done/done/error 推送' },
     STOP:    { channel: 'debate:stop',    params: {}, note: 'ipcMain.on, 发送中止信号' },
-    PROGRESS:{ channel: 'debate:progress', note: '推送: { phase: string, speakerRoleId: string, side: string, position: string }' },
-    MESSAGE: { channel: 'debate:message', note: '推送: { roleId: string, content: string, tokensUsed: number, done: boolean }' },
-    DONE:    { channel: 'debate:done',    note: '推送: { winner: string, scores: [], summary: string }' },
-    ERROR:   { channel: 'debate:error',   note: '推送: { error: string }' },
+    LIST:    { channel: 'debate:list',    params: {}, returns: { debates: [] } },
+    GET:     { channel: 'debate:get',     params: { id: '' }, returns: { debate: null } },
+    DELTA:   { channel: 'debate:delta',   note: '推送: { roleId, roleName, content, phase, side, position, isFirst }' },
+    PROMPT:  { channel: 'debate:prompt',  note: '推送: { system, user } — 调试模式' },
+    ROUND_DONE:{ channel: 'debate:round_done', note: '推送: { phase, side, position, label, roleId, roleName, content, charsUsed, charBudget, roundIndex, sideCharsPro, sideCharsCon }' },
+    DONE:    { channel: 'debate:done',    note: '推送: { winner, scores, summary }' },
+    ERROR:   { channel: 'debate:error',   note: '推送: { error }' },
   },
 
   // ── Agent ────────────────────────────────────────────────
@@ -109,12 +114,16 @@ const PRELOAD_API = {
     list: 'chat:list',
   },
   debate: {
-    start:   'debate:start',
-    stop:    'debate:stop',
-    onProgress: 'debate:progress',
-    onMessage:  'debate:message',
-    onDone:     'debate:done',
-    onError:    'debate:error',
+    create: 'debate:create',
+    step:   'debate:step',
+    stop:   'debate:stop',
+    list:   'debate:list',
+    get:    'debate:get',
+    onDelta:     'debate:delta',
+    onPrompt:    'debate:prompt',
+    onRoundDone: 'debate:round_done',
+    onDone:      'debate:done',
+    onError:     'debate:error',
   },
   agent: {
     createSession: 'agent:session-create',

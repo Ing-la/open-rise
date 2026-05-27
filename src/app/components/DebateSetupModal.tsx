@@ -13,6 +13,7 @@ interface DebateSetupModalProps {
     pro1: string; pro2: string; pro3: string; pro4: string;
     con1: string; con2: string; con3: string; con4: string;
     judge: string;
+    debugMode: boolean;
   }) => void;
 }
 
@@ -32,6 +33,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
   const [con3, setCon3] = useState('');
   const [con4, setCon4] = useState('');
   const [judge, setJudge] = useState('');
+  const [debugMode, setDebugMode] = useState(false);
 
   // ── Animation lifecycle ──
   useEffect(() => {
@@ -63,7 +65,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
 
   const handleStart = () => {
     if (!allFilled) return;
-    onStart({ proTopic: proTopic.trim(), conTopic: conTopic.trim(), background, pro1, pro2, pro3, pro4, con1, con2, con3, con4, judge });
+    onStart({ proTopic: proTopic.trim(), conTopic: conTopic.trim(), background, pro1, pro2, pro3, pro4, con1, con2, con3, con4, judge, debugMode });
   };
 
   if (!mounted) return null;
@@ -204,6 +206,27 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
                 {renderRoleSelect(judge, setJudge, '裁判')}
               </div>
               <div className="shaky-line w-full mt-2" />
+            </div>
+
+            {/* ── Debug mode toggle ── */}
+            <div className="flex items-center gap-4 pt-2">
+              <button
+                onClick={() => setDebugMode(!debugMode)}
+                className="relative px-4 py-1.5 font-hand text-sm cursor-pointer select-none transition-opacity"
+                type="button"
+              >
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 30" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                  {debugMode ? (
+                    <>
+                      <rect x="2" y="2" width="96" height="26" rx="6" fill="#2C2C2C" />
+                      <rect x="2" y="2" width="96" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="2" filter="url(#tremble)" />
+                    </>
+                  ) : (
+                    <rect x="2" y="2" width="96" height="26" rx="6" fill="none" stroke="#2C2C2C" strokeWidth="2" filter="url(#tremble)" opacity="0.3" />
+                  )}
+                </svg>
+                <span className={`relative ${debugMode ? 'text-white' : 'text-oxblood/30'}`}>🔬 调试模式</span>
+              </button>
             </div>
 
             {/* ── Start button ── */}
