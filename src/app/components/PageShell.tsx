@@ -25,7 +25,7 @@ export default function PageShell() {
   const [brainOpen, setBrainOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const [capabilitiesModalOpen, setCapabilitiesModalOpen] = useState(false);
-  const [debatePhaseInfo, setDebatePhaseInfo] = useState<{ currentPhase: string; roundIndex: number; debugMode: boolean; hasPrompt: boolean; openPrompt?: () => void }>({ currentPhase: '', roundIndex: 0, debugMode: false, hasPrompt: false });
+  const [debatePhaseInfo, setDebatePhaseInfo] = useState<{ currentPhase: string; roundIndex: number }>({ currentPhase: '', roundIndex: 0 });
 
   useEffect(() => {
     listRoles().then(setIndividuals).catch(() => {});
@@ -193,16 +193,8 @@ export default function PageShell() {
           </>
         )}
 
-        {/* ── OpenRise + debug prompt button ── */}
+        {/* ── OpenRise ── */}
         <div className="ml-auto flex items-center gap-3">
-          {debatePhaseInfo.openPrompt && (debatePhaseInfo.hasPrompt || debatePhaseInfo.debugMode) && (
-            <button
-              onClick={debatePhaseInfo.openPrompt}
-              className="font-mono text-[11px] text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 transition-colors cursor-pointer"
-            >
-              查看输入
-            </button>
-          )}
           {mode !== 'home' ? (
             <button
               onClick={exitToHome}

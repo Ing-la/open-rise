@@ -67,7 +67,19 @@ function SpeechBubble({ speech }: { speech: SpeechEntry }) {
   if (isJudge) {
     return (
       <div className="flex flex-col items-center max-w-[80%] mx-auto">
-        <span className="font-hand text-base text-[#2C2C2C]/60 mb-2">裁判评判</span>
+        <span className="font-hand text-base text-[#2C2C2C]/60 mb-2">
+          裁判评判
+          {speech.isStreaming && (
+            <span className="inline-flex items-center ml-2 text-[#2C2C2C]/30 text-sm">
+              <span>思考中</span>
+              <span className="inline-flex ml-0.5">
+                <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
+                <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
+                <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
+              </span>
+            </span>
+          )}
+        </span>
         <div className="w-full p-4 rounded-xl bg-[#2C2C2C]/4">
           <div className="prose prose-sm max-w-none font-mono text-sm text-[#2C2C2C]/80 leading-relaxed">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{speech.content}</ReactMarkdown>
@@ -85,7 +97,35 @@ function SpeechBubble({ speech }: { speech: SpeechEntry }) {
       <AvatarIcon id={speech.avatar ?? ''} size={36} />
       <div className="min-w-0 flex-1">
         <span className={`block font-hand text-base text-[#2C2C2C] mb-1 ${isPro ? '' : 'text-right'}`}>
-          {speech.roleName || (isPro ? '正方' : '反方')} · {speech.position}
+          {isPro ? (
+            <>
+              {speech.roleName || '正方'} · {speech.position}
+              {speech.isStreaming && (
+                <span className="inline-flex items-center ml-2 text-[#2C2C2C]/40 text-sm font-normal">
+                  <span>思考中</span>
+                  <span className="inline-flex ml-0.5">
+                    <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
+                    <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
+                    <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
+                  </span>
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              {speech.isStreaming && (
+                <span className="inline-flex items-center mr-2 text-[#2C2C2C]/40 text-sm font-normal">
+                  <span>思考中</span>
+                  <span className="inline-flex ml-0.5">
+                    <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
+                    <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
+                    <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
+                  </span>
+                </span>
+              )}
+              {speech.roleName || '反方'} · {speech.position}
+            </>
+          )}
         </span>
         <div className={`p-4 rounded-xl ${speech.isStreaming ? 'bg-[#2C2C2C]/8 ring-1 ring-[#2C2C2C]/15' : 'bg-[#2C2C2C]/4'}`}>
           <div className="prose prose-sm max-w-none font-mono text-sm text-[#2C2C2C]/80 leading-relaxed">
@@ -137,7 +177,7 @@ function PromptModal({ system, user, onClose }: { system: string; user: string; 
 // ══════════════════════════════════════════════════════════════════
 //  Main Component
 // ══════════════════════════════════════════════════════════════════
-export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { currentPhase: string; roundIndex: number; debugMode: boolean; hasPrompt: boolean; openPrompt?: () => void }) => void }) {
+export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { currentPhase: string; roundIndex: number }) => void }) {
   const [pageMode, setPageMode] = useState<PageMode>('idle');
   const [setupOpen, setSetupOpen] = useState(false);
   const [debateId, setDebateId] = useState('');
@@ -178,11 +218,11 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
   // ── Report phase info to PageShell for top bar ──
   useEffect(() => {
     if (pageMode === 'active' && onPhaseInfo) {
-      onPhaseInfo({ currentPhase, roundIndex, debugMode, hasPrompt: !!latestPrompt, openPrompt: () => latestPrompt && setPromptModalOpen(true) });
+      onPhaseInfo({ currentPhase, roundIndex });
     } else if (pageMode !== 'active' && onPhaseInfo) {
-      onPhaseInfo({ currentPhase: '', roundIndex: 0, debugMode: false, hasPrompt: false });
+      onPhaseInfo({ currentPhase: '', roundIndex: 0 });
     }
-  }, [pageMode, currentPhase, roundIndex, debugMode, latestPrompt, onPhaseInfo]);
+  }, [pageMode, currentPhase, roundIndex, onPhaseInfo]);
 
   // ── Cleanup listeners on unmount ──
   useEffect(() => {
@@ -217,7 +257,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
         background: params.background,
         proRoles: [params.pro1, params.pro2, params.pro3, params.pro4],
         conRoles: [params.con1, params.con2, params.con3, params.con4],
-        judgeRoleId: params.judge,
+        judgeBrainId: params.judge,
         debugMode: params.debugMode,
       });
 
@@ -253,7 +293,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
         { roleId: params.con3, roleName: roleMap.get(params.con3) || '', avatar: avatarMap.get(params.con3), side: 'con', positionLabel: '三辩', status: 'waiting' },
         { roleId: params.con4, roleName: roleMap.get(params.con4) || '', avatar: avatarMap.get(params.con4), side: 'con', positionLabel: '四辩', status: 'waiting' },
       ]);
-      setJudgeName(roleMap.get(params.judge) || '');
+      setJudgeName('裁判');
       setPageMode('active');
 
       // Subscribe to events
@@ -312,6 +352,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
             const sideCumulative = data.side === 'pro' ? (data.sideCharsPro || 0) : (data.sideCharsCon || 0);
             copy[idx] = {
               ...copy[idx],
+              content: data.content || copy[idx].content,
               charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0),
               charBudget: data.charBudget || 0,
               isStreaming: false,
@@ -411,7 +452,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
         roleId: p.roleId, roleName: nameMap.get(p.roleId) || '', avatar: avatarMap.get(p.roleId),
         side: 'con' as const, positionLabel: posNames[p.position] || '', status: 'done' as DebaterInfo['status'],
       })));
-      setJudgeName(nameMap.get(debate.positions.find((p: any) => p.side === 'judge')?.roleId || '') || '');
+      setJudgeName(nameMap.get(debate.positions.find((p: any) => p.side === 'judge')?.roleId || '') || debate.positions.find((p: any) => p.side === 'judge')?.brainId ? '裁判' : '');
 
       const sidebarPhases = new Set(['cross', 'free']);
       let lastPhase = '';
@@ -501,7 +542,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
               const copy = [...prev];
               const isCrossFree = CROSS_FREE_PHASES.includes(data.label || data.phase || '');
               const sideCumulative = data.side === 'pro' ? (data.sideCharsPro || 0) : (data.sideCharsCon || 0);
-              copy[idx] = { ...copy[idx], charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0), charBudget: data.charBudget || 0, isStreaming: false };
+              copy[idx] = { ...copy[idx], content: data.content || copy[idx].content, charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0), charBudget: data.charBudget || 0, isStreaming: false };
               return copy;
             });
             setRoundIndex(data.roundIndex || 0);
@@ -615,7 +656,20 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
             </div>
 
             {/* Center: Transcript */}
-            <div ref={transcriptRef} className="flex-1 overflow-y-auto thin-scroll p-4 space-y-5 min-h-0">
+            <div ref={transcriptRef} className="flex-1 overflow-y-auto thin-scroll p-4 space-y-5 min-h-0 relative">
+              {/* Debug mode: floating eye button */}
+              {debugMode && (
+                <button
+                  onClick={() => latestPrompt && setPromptModalOpen(true)}
+                  className="fixed bottom-16 right-[210px] z-30 w-8 h-8 rounded-full bg-[#2C2C2C]/10 hover:bg-[#2C2C2C]/20 flex items-center justify-center transition-colors cursor-pointer"
+                  aria-label="查看 LLM 输入"
+                >
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              )}
               {speeches.length === 0 && (
                 <div className="flex items-center justify-center h-full">
                   <p className="font-mono text-sm text-[#2C2C2C]/20">点击「下一步」开始辩论</p>

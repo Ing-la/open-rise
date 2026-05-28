@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { listRoles } from '@/lib/api';
+import { listRoles, listBrains } from '@/lib/api';
 
 interface DebateSetupModalProps {
   isOpen: boolean;
@@ -21,6 +21,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const [roles, setRoles] = useState<any[]>([]);
+  const [brains, setBrains] = useState<any[]>([]);
   const [proTopic, setProTopic] = useState('');
   const [conTopic, setConTopic] = useState('');
   const [background, setBackground] = useState('');
@@ -51,6 +52,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
   useEffect(() => {
     if (isOpen) {
       listRoles().then((all) => setRoles(all.filter((r: any) => (r.brainType || '').split(',').includes('chat')))).catch(() => setRoles([]));
+      listBrains().then((all) => setBrains(all.filter((b: any) => b.type === 'chat'))).catch(() => setBrains([]));
     }
   }, [isOpen]);
 
@@ -82,6 +84,24 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
         {roles.map((r) => (
           <option key={r.id} value={r.id}>
             {r.name} · {r.brainName || '未绑定'}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
+  const renderBrainSelect = (value: string, onChange: (v: string) => void, label: string) => (
+    <div className="flex items-center gap-2">
+      <span className="font-hand text-sm text-oxblood/60 w-12 shrink-0">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-sm text-oxblood appearance-none cursor-pointer"
+      >
+        <option value="">选择大脑</option>
+        {brains.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name} · {b.vendor}/{b.model}
           </option>
         ))}
       </select>
@@ -201,9 +221,9 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
 
             {/* ── Judge ── */}
             <div>
-              <p className="font-hand text-base text-oxblood mb-2">裁判</p>
+              <p className="font-hand text-base text-oxblood mb-2">裁判 <span className="text-oxblood/30 font-mono text-xs">（选择大脑，非人物角色）</span></p>
               <div className="pl-2">
-                {renderRoleSelect(judge, setJudge, '裁判')}
+                {renderBrainSelect(judge, setJudge, '裁判')}
               </div>
               <div className="shaky-line w-full mt-2" />
             </div>

@@ -354,8 +354,11 @@ async function executeSpeech(event, state, speaker) {
 // ═══════════════════════════════════════════════════════════════
 
 async function executeJudging(event, state) {
-  const judgeRole = state.roleCache.get(state.judgeRoleId);
-  if (!judgeRole) throw new Error(`裁判角色 ${state.judgeRoleId} 未加载`);
+  const judgeEntry = state.roleCache.get(state.judgeRoleId);
+  if (!judgeEntry) throw new Error(`裁判大脑 ${state.judgeRoleId} 未加载`);
+
+  const judgeId = state.judgeRoleId;
+  const judgeName = judgeEntry.name || '裁判';
 
   // Build history
   let history = '';
@@ -365,10 +368,18 @@ async function executeJudging(event, state) {
     history += `[${s}${pos}]：${m.content}\n`;
   }
 
+  const sys = `你是${judgeName}。\n\n${JUDGE_SYSTEM}`;
+  const usr = `以下是本场辩论的完整记录：\n\n${history}\n\n请给出你的评判：`;
+
+  // Debug mode: send prompt
+  if (state.debugMode) {
+    event.sender.send('debate:prompt', { system: sys, user: usr });
+  }
+
   // Send judge phase start
   event.sender.send('debate:delta', {
-    roleId: judgeRole.id,
-    roleName: judgeRole.name,
+    roleId: judgeId,
+    roleName: judgeName,
     content: '',
     phase: 'judging',
     side: 'judge',
@@ -376,51 +387,65 @@ async function executeJudging(event, state) {
     isFirst: true,
   });
 
-  const jmsg = [
-    { role: 'system', content: `你是${judgeRole.name}，${judgeRole.soul || ''}。${judgeRole.rule || ''}\n\n${JUDGE_SYSTEM}` },
-    { role: 'user', content: `以下是本场辩论的完整记录：\n\n${history}\n\n请给出你的评判：` },
-  ];
+  // Stream judge LLM call (same path as all debaters)
+  let judgeText = '', tokens = 0;
+  await streamSpeech(judgeEntry.brain, [
+    { role: 'system', content: sys },
+    { role: 'user', content: usr },
+  ], 2048,
+    () => {},
+    (c, t) => { judgeText = c; tokens = t; }
+  );
 
-  const resp = await fetch(`${judgeRole.brain.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${judgeRole.brain.apiKey}`,
-    },
-    body: JSON.stringify({ model: judgeRole.brain.modelName, messages: jmsg, max_tokens: 2048 }),
-  });
+  if (!judgeText.trim()) throw new Error('裁判输出为空');
 
-  if (!resp.ok) throw new Error(`裁判 API 错误 ${resp.status}`);
-
-  const data = await resp.json();
-  const judgeText = data.choices?.[0]?.message?.content || '';
-
-  // Stream judge text for visual effect
-  for (let i = 0; i < judgeText.length; i += 5) {
-    const chunk = judgeText.slice(i, i + 5);
-    event.sender.send('debate:delta', { roleId: judgeRole.id, content: chunk, isFirst: false });
-  }
-
-  await prisma.debateMessage.create({
-    data: {
-      debateId: state.debateId,
-      roleId: judgeRole.id,
-      side: 'judge',
-      position: 0,
-      round: 'judging',
-      content: judgeText,
-      tokenCount: data.usage?.completion_tokens || Math.ceil(judgeText.length * 0.35),
-      roundIndex: ++state.roundIdx,
-    },
-  });
-
-  // Parse judge result
+  // Parse judge result (BEFORE saving to DB)
   let judgeResult;
   try {
     judgeResult = JSON.parse(judgeText.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim());
   } catch {
-    throw new Error('裁判输出无法解析为 JSON');
+    throw new Error(`裁判输出无法解析为 JSON：${judgeText.slice(0, 200)}`);
   }
+
+  // Build readable text from parsed result (what users see)
+  const winnerLabel = judgeResult.winner === 'pro' ? '正方' : '反方';
+  let readableText = '**辩论结束**\n\n---\n\n';
+  readableText += `**获胜方：${winnerLabel}**\n\n`;
+  if (judgeResult.overallBest) readableText += `**全场最佳辩手：${POSITION_NAMES[judgeResult.overallBest] || ''}**\n\n`;
+  if (judgeResult.bestPro) readableText += `正方最佳辩手：${POSITION_NAMES[judgeResult.bestPro] || ''}\n`;
+  if (judgeResult.bestCon) readableText += `反方最佳辩手：${POSITION_NAMES[judgeResult.bestCon] || ''}\n`;
+  readableText += '\n---\n\n### 评分明细\n\n| 辩手 | 内容 | 逻辑 | 表达 | 反驳 | 总分 | 评语 |\n|------|------|------|------|------|------|------|\n';
+  if (judgeResult.scores) {
+    for (const sc of judgeResult.scores) {
+      const sideLabel = sc.side === 'pro' ? '正方' : '反方';
+      const posName = POSITION_NAMES[sc.position] || '';
+      const total = ((sc.content || 0) * 0.30 + (sc.logic || 0) * 0.25 + (sc.expression || 0) * 0.20 + (sc.rebuttal || 0) * 0.25).toFixed(1);
+      readableText += `| ${sideLabel}${posName} | ${sc.content || '-'} | ${sc.logic || '-'} | ${sc.expression || '-'} | ${sc.rebuttal || '-'} | ${total} | ${sc.comment || ''} |\n`;
+    }
+  }
+  if (judgeResult.summary) {
+    readableText += `\n---\n\n### 裁判总结\n\n${judgeResult.summary}\n`;
+  }
+
+  // Stream readable text to frontend (not raw JSON)
+  for (let i = 0; i < readableText.length; i += 5) {
+    event.sender.send('debate:delta', { roleId: judgeId, content: readableText.slice(i, i + 5), isFirst: false });
+  }
+
+  // Save judge message to DB (readable text, not raw JSON)
+  await prisma.debateMessage.create({
+    data: {
+      debateId: state.debateId,
+      roleId: judgeId,
+      side: 'judge',
+      position: 0,
+      round: 'judging',
+      content: readableText,
+      tokenCount: tokens,
+      charCount: readableText.length,
+      roundIndex: ++state.roundIdx,
+    },
+  });
 
   // Save scores
   const allPositionDefs = [
@@ -471,14 +496,14 @@ async function executeJudging(event, state) {
     side: 'judge',
     position: 0,
     label: '裁判评判',
-    roleId: judgeRole.id,
-    roleName: judgeRole.name,
-    content: judgeText,
-    charsUsed: judgeText.length,
+    roleId: judgeId,
+    roleName: judgeName,
+    content: readableText,
+    charsUsed: readableText.length,
     charBudget: 0,
     roundIndex: state.roundIdx,
-    sideCharsPro: state.perSideChars.pro,
-    sideCharsCon: state.perSideChars.con,
+    sideCharsPro: 0,
+    sideCharsCon: 0,
   });
 
   event.sender.send('debate:done', {
@@ -536,7 +561,7 @@ module.exports = function (ipcMain) {
 
   // ── Create debate (step-by-step) ──
   ipcMain.handle('debate:create', async (_event, params) => {
-    const { proTopic, conTopic, background, proRoles, conRoles, judgeRoleId, debugMode } = params;
+    const { proTopic, conTopic, background, proRoles, conRoles, judgeBrainId, debugMode } = params;
 
     // 1. Create debate
     const debate = await prisma.debate.create({
@@ -564,16 +589,15 @@ module.exports = function (ipcMain) {
       });
     }
 
-    // Judge
-    const judgeRole = await prisma.role.findUnique({
-      where: { id: judgeRoleId },
-      include: { brain: true },
+    // Judge — directly load brain, no role persona
+    const judgeBrain = await prisma.brain.findUnique({
+      where: { id: judgeBrainId },
     });
-    if (!judgeRole) throw new Error(`裁判角色 ${judgeRoleId} 不存在`);
-    roleCache.set(judgeRoleId, judgeRole);
+    if (!judgeBrain) throw new Error(`裁判大脑 ${judgeBrainId} 不存在`);
+    roleCache.set(judgeBrainId, { name: '裁判', brain: judgeBrain });
 
     await prisma.debatePosition.create({
-      data: { debateId: debate.id, roleId: judgeRoleId, side: 'judge', position: 0, brainId: judgeRole.brainId },
+      data: { debateId: debate.id, roleId: judgeBrainId, side: 'judge', position: 0, brainId: judgeBrainId },
     });
 
     // 3. Initialize state
@@ -582,7 +606,7 @@ module.exports = function (ipcMain) {
       proTopic, conTopic, background,
       proRoles: allPositionDefs.filter(p => p.side === 'pro'),
       conRoles: allPositionDefs.filter(p => p.side === 'con'),
-      judgeRoleId,
+      judgeRoleId: judgeBrainId,
       roleCache,
       allMsgs: [],
       roundIdx: 0,
@@ -617,17 +641,25 @@ module.exports = function (ipcMain) {
     // Use persisted debugMode (resume param overrides)
     const resumeDebugMode = debugMode !== undefined ? !!debugMode : debate.debugMode;
 
-    // Load roles + brains
+    // Load roles for debaters, load brain for judge
     const roleCache = new Map();
     const positionDefs = debate.positions.filter(p => p.side !== 'judge');
     const judgePosition = debate.positions.find(p => p.side === 'judge');
 
-    for (const pos of debate.positions) {
+    for (const pos of positionDefs) {
       const role = await prisma.role.findUnique({
         where: { id: pos.roleId },
         include: { brain: true },
       });
       if (role) roleCache.set(pos.roleId, role);
+    }
+
+    // Judge uses brain directly (no role persona)
+    let judgeRoleId = '';
+    if (judgePosition) {
+      judgeRoleId = judgePosition.roleId;
+      const brain = await prisma.brain.findUnique({ where: { id: judgePosition.brainId } });
+      if (brain) roleCache.set(judgeRoleId, { name: '裁判', brain });
     }
 
     // Reconstruct state from existing messages
@@ -693,7 +725,7 @@ module.exports = function (ipcMain) {
       background: debate.background,
       proRoles: positionDefs.filter(p => p.side === 'pro').map(p => ({ roleId: p.roleId, position: p.position })),
       conRoles: positionDefs.filter(p => p.side === 'con').map(p => ({ roleId: p.roleId, position: p.position })),
-      judgeRoleId: judgePosition?.roleId || '',
+      judgeRoleId,
       roleCache,
       allMsgs,
       roundIdx: allMsgs.length,

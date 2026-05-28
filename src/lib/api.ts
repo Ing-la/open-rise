@@ -27,7 +27,7 @@ interface OpenRiseAPI {
     list(roleId: string): Promise<any[]>;
   };
   debate: {
-    create(params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeRoleId: string; debugMode?: boolean }): Promise<{ debateId: string }>;
+    create(params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeBrainId: string; debugMode?: boolean }): Promise<{ debateId: string }>;
     resume(params: { debateId: string; debugMode?: boolean }): Promise<{ debateId: string }>;
     step(params: { debateId: string }): void;
     stop(): void;
@@ -220,11 +220,7 @@ export interface DebateCallbacks {
   onError?: (data: { error: string }) => void;
 }
 
-export function createDebate(params: {
-  proTopic: string; conTopic: string; background: string;
-  proRoles: string[]; conRoles: string[]; judgeRoleId: string;
-  debugMode?: boolean;
-}): Promise<{ debateId: string }> {
+export function createDebate(params: Parameters<OpenRiseAPI['debate']['create']>[0]): Promise<{ debateId: string }> {
   if (!isElectron) return Promise.resolve({ debateId: '' });
   return api!.debate.create(params);
 }
