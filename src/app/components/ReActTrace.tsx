@@ -22,8 +22,8 @@ function TraceStepRow({ step, type, content, name, input, output }: TraceStep & 
   if (type === 'thought') {
     return (
       <div className="flex gap-2 py-1">
-        <span className="font-mono text-xs text-[#2C2C2C]/30 w-5 shrink-0 text-right">{step}</span>
-        <span className="font-mono text-xs text-[#2C2C2C]/50 italic">🤔 {content}</span>
+        <span className="font-mono text-base text-[#2C2C2C]/30 w-5 shrink-0 text-right">{step}</span>
+        <span className="font-mono text-base text-[#2C2C2C]/50 italic">🤔 {content}</span>
       </div>
     );
   }
@@ -34,32 +34,32 @@ function TraceStepRow({ step, type, content, name, input, output }: TraceStep & 
 
     return (
       <div className="flex gap-2 py-1">
-        <span className="font-mono text-xs text-[#2C2C2C]/30 w-5 shrink-0 text-right">{step}</span>
+        <span className="font-mono text-base text-[#2C2C2C]/30 w-5 shrink-0 text-right">{step}</span>
         <div className="flex-1 min-w-0">
-          <span className="font-mono text-xs text-[#2C2C2C]/70">
+          <span className="font-mono text-base text-[#2C2C2C]/70">
             🛠 <span className="font-bold">{name}</span>
           </span>
           {isLongInput ? (
             <>
               <button
                 onClick={() => setExpanded(!expanded)}
-                className="block font-mono text-xs text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 mt-0.5 cursor-pointer"
+                className="block font-mono text-sm text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 mt-0.5 cursor-pointer"
               >
                 {expanded ? '收起参数' : '展开参数'}
               </button>
               {expanded && (
-                <pre className="font-mono text-[11px] text-[#2C2C2C]/50 mt-0.5 whitespace-pre-wrap overflow-x-auto max-h-32 overflow-y-auto thin-scroll">
+                <pre className="font-mono text-xs text-[#2C2C2C]/50 mt-0.5 whitespace-pre-wrap overflow-x-auto max-h-32 overflow-y-auto thin-scroll">
                   {inputStr}
                 </pre>
               )}
             </>
           ) : (
-            <pre className="font-mono text-[11px] text-[#2C2C2C]/50 mt-0.5 whitespace-pre-wrap">{inputStr}</pre>
+            <pre className="font-mono text-xs text-[#2C2C2C]/50 mt-0.5 whitespace-pre-wrap">{inputStr}</pre>
           )}
           {output && (
             <button
               onClick={() => setExpanded(!expanded)}
-              className="block font-mono text-xs text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 mt-0.5 cursor-pointer"
+              className="block font-mono text-base text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 mt-0.5 cursor-pointer"
             >
               ← {output.length > 200 ? `${output.slice(0, 200)}...` : output}
             </button>
@@ -81,7 +81,7 @@ export default function ReActTrace({ trace, defaultOpen = false }: ReActTracePro
     <div className="mt-3 border-t border-[#2C2C2C]/10 pt-2">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 text-xs font-mono text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 transition-colors cursor-pointer"
+        className="flex items-center gap-2 text-sm font-mono text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 transition-colors cursor-pointer"
       >
         <span className={`transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>&#9656;</span>
         {isOpen ? '隐藏思考过程' : `查看思考过程 (${trace.length} 步)`}

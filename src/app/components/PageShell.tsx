@@ -96,6 +96,7 @@ export default function PageShell() {
 
   const enterChat = useCallback(() => {
     setMode('chat');
+    setSidebarOpen(false);
     listRoles().then(setIndividuals).catch(() => {});
   }, []);
 
@@ -270,9 +271,9 @@ export default function PageShell() {
                         selectedPerson?.id === ind.id ? 'bg-[#2C2C2C]/8' : 'hover:bg-[#2C2C2C]/5'
                       }`}
                     >
-                      <AvatarIcon id={ind.avatar} size={36} />
+                      <AvatarIcon id={ind.avatar} size={32} />
                       <div className="min-w-0 flex-1">
-                        <p className="font-hand text-sm text-[#2C2C2C] truncate">{ind.name}</p>
+                        <p className="font-hand text-lg text-[#2C2C2C] truncate">{ind.name}</p>
                         <p className="font-mono text-[10px] text-[#2C2C2C]/40 truncate">{ind.brainName}</p>
                       </div>
                     </button>
@@ -296,7 +297,7 @@ export default function PageShell() {
             <div className="shrink-0 px-3 py-3 border-t border-[#2C2C2C]/10">
               <button
                 onClick={() => setCapabilitiesModalOpen(true)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg font-hand text-sm text-[#2C2C2C]/50 hover:text-[#2C2C2C] hover:bg-[#2C2C2C]/5 transition-all cursor-pointer"
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg font-hand text-lg text-[#2C2C2C]/50 hover:text-[#2C2C2C] hover:bg-[#2C2C2C]/5 transition-all cursor-pointer"
                 type="button"
               >
                 <span>🔧</span>

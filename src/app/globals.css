@@ -68,7 +68,6 @@ body::after {
 /* ── Markdown content ── */
 .markdown-content {
   font-family: 'Courier Prime', 'Courier New', monospace;
-  font-size: 0.875rem;
   line-height: 1.7;
   color: #2C2C2C;
 }
@@ -155,4 +154,13 @@ body::after {
 }
 .animate-slide-in {
   animation: slideIn 0.2s ease-out;
+}
+
+/* ── Streaming dots ── */
+@keyframes stream-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-5px); }
+}
+.animate-stream-dot {
+  animation: stream-dot 1s ease-in-out infinite;
 }

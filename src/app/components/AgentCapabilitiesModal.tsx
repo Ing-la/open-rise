@@ -161,7 +161,7 @@ export default function AgentCapabilitiesModal({ isOpen, onClose, agentRoleId, a
 
           {agentRoleId ? (
             <>
-              <p className="font-mono text-xs text-oxblood/40 mb-6">
+              <p className="font-mono text-sm text-oxblood/40 mb-6">
                 <span className="text-oxblood/70">{agentRoleName}</span> 的额外能力配置
               </p>
 

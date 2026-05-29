@@ -74,11 +74,11 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
 
   const renderRoleSelect = (value: string, onChange: (v: string) => void, label: string) => (
     <div className="flex items-center gap-2">
-      <span className="font-hand text-sm text-oxblood/60 w-12 shrink-0">{label}</span>
+      <span className="font-hand text-base text-oxblood/60 w-12 shrink-0">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-sm text-oxblood appearance-none cursor-pointer"
+        className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-oxblood appearance-none cursor-pointer"
       >
         <option value="">选择角色</option>
         {roles.map((r) => (
@@ -92,11 +92,11 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
 
   const renderBrainSelect = (value: string, onChange: (v: string) => void, label: string) => (
     <div className="flex items-center gap-2">
-      <span className="font-hand text-sm text-oxblood/60 w-12 shrink-0">{label}</span>
+      <span className="font-hand text-base text-oxblood/60 w-12 shrink-0">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-sm text-oxblood appearance-none cursor-pointer"
+        className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-oxblood appearance-none cursor-pointer"
       >
         <option value="">选择大脑</option>
         {brains.map((b) => (
@@ -161,7 +161,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
             {/* ── Pro & Con topics ── */}
             <div className="grid grid-cols-2 gap-6">
               <div className="group">
-                <p className="font-hand text-sm text-oxblood/60 mb-1">正方辩题</p>
+                <p className="font-hand text-base text-oxblood/60 mb-1">正方辩题</p>
                 <input
                   value={proTopic}
                   onChange={(e) => setProTopic(e.target.value)}
@@ -171,7 +171,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
                 <div className="shaky-line w-full mt-1" />
               </div>
               <div className="group">
-                <p className="font-hand text-sm text-oxblood/60 mb-1">反方辩题</p>
+                <p className="font-hand text-base text-oxblood/60 mb-1">反方辩题</p>
                 <input
                   value={conTopic}
                   onChange={(e) => setConTopic(e.target.value)}
@@ -184,7 +184,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
 
             {/* ── Background ── */}
             <div className="group">
-              <p className="font-hand text-sm text-oxblood/60 mb-1">
+              <p className="font-hand text-base text-oxblood/60 mb-1">
                 背景资料 <span className="text-oxblood/30">（可选）</span>
               </p>
               <textarea
@@ -192,7 +192,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
                 onChange={(e) => setBackground(e.target.value)}
                 placeholder="提供辩题相关的背景信息、统计数据或参考资料..."
                 rows={3}
-                className="w-full bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-sm text-oxblood placeholder-oxblood/30 caret-oxblood resize-none"
+                className="w-full bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-oxblood placeholder-oxblood/30 caret-oxblood resize-none"
               />
               <div className="shaky-line w-full mt-1" />
             </div>
@@ -200,7 +200,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
             {/* ── Pro & Con side by side ── */}
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <p className="font-hand text-base text-oxblood mb-2">正方</p>
+                <p className="font-hand text-lg text-oxblood mb-2">正方</p>
                 <div className="space-y-2">
                   {renderRoleSelect(pro1, setPro1, '一辩')}
                   {renderRoleSelect(pro2, setPro2, '二辩')}
@@ -209,7 +209,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
                 </div>
               </div>
               <div>
-                <p className="font-hand text-base text-oxblood mb-2">反方</p>
+                <p className="font-hand text-lg text-oxblood mb-2">反方</p>
                 <div className="space-y-2">
                   {renderRoleSelect(con1, setCon1, '一辩')}
                   {renderRoleSelect(con2, setCon2, '二辩')}
@@ -221,7 +221,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
 
             {/* ── Judge ── */}
             <div>
-              <p className="font-hand text-base text-oxblood mb-2">裁判 <span className="text-oxblood/30 font-mono text-xs">（选择大脑，非人物角色）</span></p>
+              <p className="font-hand text-lg text-oxblood mb-2">裁判 <span className="text-oxblood/30 font-mono text-sm">（选择大脑，非人物角色）</span></p>
               <div className="pl-2">
                 {renderBrainSelect(judge, setJudge, '裁判')}
               </div>
@@ -232,7 +232,7 @@ export default function DebateSetupModal({ isOpen, onClose, onStart }: DebateSet
             <div className="flex items-center gap-4 pt-2">
               <button
                 onClick={() => setDebugMode(!debugMode)}
-                className="relative px-4 py-1.5 font-hand text-sm cursor-pointer select-none transition-opacity"
+                className="relative px-4 py-1.5 font-hand text-base cursor-pointer select-none transition-opacity"
                 type="button"
               >
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 30" preserveAspectRatio="none" fill="none" aria-hidden="true">

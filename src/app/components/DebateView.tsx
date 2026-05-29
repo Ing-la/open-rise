@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import DebateSetupModal from './DebateSetupModal';
 import { AvatarIcon } from './AvatarIcon';
-import { listRoles, createDebate, stepDebate, subscribeDebate, stopDebate, listDebates, getDebate, resumeDebate } from '@/lib/api';
+import { listRoles, createDebate, stepDebate, subscribeDebate, stopDebate, listDebates, getDebate, resumeDebate, aggregateDebate } from '@/lib/api';
 
 // ── Types ──
 type PageMode = 'idle' | 'active' | 'finished';
@@ -43,6 +43,8 @@ const PHASE_LABELS: Record<string, string> = {
 };
 const CROSS_FREE_PHASES = ['对辩', '自由辩论'];
 
+interface JudgeRow { debater: string; content: number; logic: number; expression: number; rebuttal: number; total: number; comment: string; }
+
 // ══════════════════════════════════════════════════════════════════
 //  Sub-components
 // ══════════════════════════════════════════════════════════════════
@@ -53,10 +55,32 @@ function DebaterAvatar({ debater, isSpeaking }: { debater: DebaterInfo; isSpeaki
       <div className="relative rounded-full">
         <AvatarIcon id={debater.avatar ?? ''} size={40} />
       </div>
-      <span className="font-hand text-sm text-[#2C2C2C] text-center leading-tight">{debater.roleName}</span>
-      <span className="font-mono text-xs text-[#2C2C2C]/40">{debater.positionLabel}</span>
+      <span className="font-hand text-lg text-[#2C2C2C] text-center leading-tight">{debater.roleName}</span>
+      <span className="font-mono text-sm text-[#2C2C2C]/40">{debater.positionLabel}</span>
     </div>
   );
+}
+
+function parseJudgeTable(markdown: string): JudgeRow[] {
+  const lines = markdown.split('\n');
+  const headerIdx = lines.findIndex(l => /^\|/.test(l.trim()) && l.includes('辩手'));
+  if (headerIdx < 0) return [];
+  const tableLines = lines.slice(headerIdx + 1).filter(l => /^\|/.test(l.trim()) && !l.includes('---'));
+  const rows: JudgeRow[] = [];
+  for (const line of tableLines) {
+    const parts = line.split('|').map(p => p.trim()).filter(Boolean);
+    if (parts.length < 7) continue;
+    rows.push({
+      debater: parts[0],
+      content: parseInt(parts[1]) || 0,
+      logic: parseInt(parts[2]) || 0,
+      expression: parseInt(parts[3]) || 0,
+      rebuttal: parseInt(parts[4]) || 0,
+      total: parseFloat(parts[5]) || 0,
+      comment: parts[6] || '',
+    });
+  }
+  return rows;
 }
 
 function SpeechBubble({ speech }: { speech: SpeechEntry }) {
@@ -65,28 +89,47 @@ function SpeechBubble({ speech }: { speech: SpeechEntry }) {
   const showChars = CROSS_FREE_PHASES.includes(speech.phase);
 
   if (isJudge) {
+    // Parse the markdown table into structured rows for compact card view
+    const rows = !speech.isStreaming ? parseJudgeTable(speech.content) : [];
+
     return (
-      <div className="flex flex-col items-center max-w-[80%] mx-auto">
-        <span className="font-hand text-base text-[#2C2C2C]/60 mb-2">
-          裁判评判
+      <div className="flex flex-col items-center max-w-[90%] mx-auto">
+        <span className="font-hand text-lg text-[#2C2C2C]/60 mb-2">
+          {speech.roleName || '裁判评判'}
           {speech.isStreaming && (
-            <span className="inline-flex items-center ml-2 text-[#2C2C2C]/30 text-sm">
-              <span>思考中</span>
-              <span className="inline-flex ml-0.5">
-                <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
-                <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
-                <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
-              </span>
+            <span className="inline-flex items-center ml-2 gap-1">
+              <span className="w-2 h-2 rounded-full bg-[#FF4B4B] animate-stream-dot" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 rounded-full bg-[#FF8C42] animate-stream-dot" style={{ animationDelay: '333ms' }} />
+              <span className="w-2 h-2 rounded-full bg-[#9B59B6] animate-stream-dot" style={{ animationDelay: '666ms' }} />
             </span>
           )}
         </span>
         <div className="w-full p-4 rounded-xl bg-[#2C2C2C]/4">
-          <div className="prose prose-sm max-w-none font-mono text-sm text-[#2C2C2C]/80 leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{speech.content}</ReactMarkdown>
-            {speech.isStreaming && (
-              <span className="inline-block w-[2px] h-[1em] bg-[#2C2C2C]/60 animate-pulse ml-0.5 align-middle" />
-            )}
-          </div>
+          {speech.isStreaming ? (
+            <span className="inline-block w-[2px] h-[1em] bg-[#2C2C2C]/60 animate-pulse align-middle" />
+          ) : rows.length > 0 ? (
+            <div className="space-y-4">
+              {rows.map((row, i) => (
+                <div key={i} className="border-b border-[#2C2C2C]/5 pb-3 last:border-b-0">
+                  <p className="font-hand text-base text-[#2C2C2C]">{row.debater}</p>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    <span className="text-sm px-2 py-0.5 rounded bg-[#2C2C2C]/8 text-[#2C2C2C]/70">内容 {row.content}</span>
+                    <span className="text-sm px-2 py-0.5 rounded bg-[#2C2C2C]/8 text-[#2C2C2C]/70">逻辑 {row.logic}</span>
+                    <span className="text-sm px-2 py-0.5 rounded bg-[#2C2C2C]/8 text-[#2C2C2C]/70">表达 {row.expression}</span>
+                    <span className="text-sm px-2 py-0.5 rounded bg-[#2C2C2C]/8 text-[#2C2C2C]/70">反驳 {row.rebuttal}</span>
+                    <span className="text-sm px-3 py-0.5 rounded bg-[#2C2C2C]/15 text-[#2C2C2C] font-bold">{row.total.toFixed(2)}</span>
+                  </div>
+                  {row.comment && (
+                    <p className="font-mono text-lg text-[#2C2C2C]/80 mt-1.5" title={row.comment}>{row.comment}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="prose prose-sm max-w-none font-mono text-lg text-[#2C2C2C]/80 leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{speech.content}</ReactMarkdown>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -96,31 +139,25 @@ function SpeechBubble({ speech }: { speech: SpeechEntry }) {
     <div className={`flex gap-3 max-w-[80%] ${isPro ? '' : 'ml-auto flex-row-reverse'}`}>
       <AvatarIcon id={speech.avatar ?? ''} size={36} />
       <div className="min-w-0 flex-1">
-        <span className={`block font-hand text-base text-[#2C2C2C] mb-1 ${isPro ? '' : 'text-right'}`}>
+        <span className={`block font-hand text-lg text-[#2C2C2C] mb-1 ${isPro ? '' : 'text-right'}`}>
           {isPro ? (
             <>
               {speech.roleName || '正方'} · {speech.position}
               {speech.isStreaming && (
-                <span className="inline-flex items-center ml-2 text-[#2C2C2C]/40 text-sm font-normal">
-                  <span>思考中</span>
-                  <span className="inline-flex ml-0.5">
-                    <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
-                    <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
-                    <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
-                  </span>
+                <span className="inline-flex items-center ml-2 gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#FF4B4B] animate-stream-dot" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-[#FF8C42] animate-stream-dot" style={{ animationDelay: '333ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-[#9B59B6] animate-stream-dot" style={{ animationDelay: '666ms' }} />
                 </span>
               )}
             </>
           ) : (
             <>
               {speech.isStreaming && (
-                <span className="inline-flex items-center mr-2 text-[#2C2C2C]/40 text-sm font-normal">
-                  <span>思考中</span>
-                  <span className="inline-flex ml-0.5">
-                    <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
-                    <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
-                    <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
-                  </span>
+                <span className="inline-flex items-center mr-2 gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#FF4B4B] animate-stream-dot" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-[#FF8C42] animate-stream-dot" style={{ animationDelay: '333ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-[#9B59B6] animate-stream-dot" style={{ animationDelay: '666ms' }} />
                 </span>
               )}
               {speech.roleName || '反方'} · {speech.position}
@@ -128,7 +165,7 @@ function SpeechBubble({ speech }: { speech: SpeechEntry }) {
           )}
         </span>
         <div className={`p-4 rounded-xl ${speech.isStreaming ? 'bg-[#2C2C2C]/8 ring-1 ring-[#2C2C2C]/15' : 'bg-[#2C2C2C]/4'}`}>
-          <div className="prose prose-sm max-w-none font-mono text-sm text-[#2C2C2C]/80 leading-relaxed">
+          <div className="prose prose-sm max-w-none font-mono text-lg text-[#2C2C2C]/80 leading-relaxed">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{speech.content}</ReactMarkdown>
             {speech.isStreaming && (
               <span className="inline-block w-[2px] h-[1em] bg-[#2C2C2C]/60 animate-pulse ml-0.5 align-middle" />
@@ -136,7 +173,7 @@ function SpeechBubble({ speech }: { speech: SpeechEntry }) {
           </div>
         </div>
         {showChars && speech.charsUsed > 0 && !speech.isStreaming && (
-          <p className={`font-mono text-[10px] text-[#2C2C2C]/25 mt-1 ${isPro ? '' : 'text-right'}`}>
+          <p className={`font-mono text-xs text-[#2C2C2C]/25 mt-1 ${isPro ? '' : 'text-right'}`}>
             已使用 {speech.charsUsed}/{speech.charBudget} 字
           </p>
         )}
@@ -157,16 +194,16 @@ function PromptModal({ system, user, onClose }: { system: string; user: string; 
       <div className="bg-white rounded-xl shadow-lg max-w-2xl w-[90vw] max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-3 border-b border-[#2C2C2C]/10">
           <span className="font-hand text-base text-[#2C2C2C]">本轮 LLM 输入</span>
-          <button onClick={onClose} className="font-mono text-xs text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 cursor-pointer">✕ 关闭</button>
+          <button onClick={onClose} className="font-mono text-sm text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 cursor-pointer">✕ 关闭</button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4 thin-scroll">
           <div>
             <p className="font-hand text-sm text-[#2C2C2C]/60 mb-1">System Prompt</p>
-            <pre className="font-mono text-xs text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">{system}</pre>
+            <pre className="font-mono text-sm text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">{system}</pre>
           </div>
           <div>
             <p className="font-hand text-sm text-[#2C2C2C]/60 mb-1">User Message</p>
-            <pre className="font-mono text-xs text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">{user}</pre>
+            <pre className="font-mono text-sm text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">{user}</pre>
           </div>
         </div>
       </div>
@@ -196,6 +233,11 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
   const [latestPrompt, setLatestPrompt] = useState<{ system: string; user: string } | null>(null);
   const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [debateList, setDebateList] = useState<any[]>([]);
+  const [judgingPhase2Ready, setJudgingPhase2Ready] = useState(false);
+  const [judgingTotal, setJudgingTotal] = useState(0);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [debateError, setDebateError] = useState<string | null>(null);
+  const [debateResult, setDebateResult] = useState<{ proTotal: number; conTotal: number; bestPro?: number; bestCon?: number; overallBest?: number } | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const streamingAccum = useRef('');
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -236,6 +278,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
     onRoundDone: (data: any) => void;
     onDone: (data: any) => void;
     onError: (data: any) => void;
+    onJudgingDone: (data: any) => void;
   }) => {
     cleanupRef.current?.();
     const unsub = subscribeDebate({
@@ -244,6 +287,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
       onRoundDone: callbacks.onRoundDone,
       onDone: callbacks.onDone,
       onError: callbacks.onError,
+      onJudgingDone: callbacks.onJudgingDone,
     });
     cleanupRef.current = unsub;
   }, []);
@@ -371,7 +415,12 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           setConDebaters(prev => prev.map(markDone));
           setCurrentSpeakerId(null);
 
-          // Enable step button
+          // Enable step button (skip judging — judging_done handles it)
+          if (data.phase !== 'judging') setIsStepping(false);
+        },
+        onJudgingDone: (data) => {
+          setJudgingPhase2Ready(true);
+          setJudgingTotal(data.personaCount || 0);
           setIsStepping(false);
         },
         onDone: (data) => {
@@ -383,6 +432,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
         },
         onError: (data) => {
           console.error('[Debate Error]', data.error);
+          setDebateError(data.error || '未知错误');
           setIsStepping(false);
           cleanupRef.current = null;
         },
@@ -392,12 +442,34 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
     }
   }, [subscribe]);
 
+  // ── Aggregate judging ──
+  const handleAggregate = useCallback(async () => {
+    if (!debateId) return;
+    try {
+      const result = await aggregateDebate(debateId);
+      if (result.winner) setWinner(result.winner as 'pro' | 'con');
+      setDebateResult({ proTotal: result.proTotal, conTotal: result.conTotal, bestPro: result.bestPro, bestCon: result.bestCon, overallBest: result.overallBest });
+      setPageMode('finished');
+      setCurrentSpeakerId(null);
+      setIsStepping(false);
+    } catch (err) {
+      console.error('[Debate Aggregate]', err);
+      setDebateError(err instanceof Error ? err.message : '聚合评分失败');
+      setIsStepping(false);
+    }
+  }, [debateId]);
+
   // ── Step (next round) ──
   const handleStep = useCallback(() => {
     if (!debateId || isStepping) return;
+    if (judgingPhase2Ready) {
+      handleAggregate();
+      return;
+    }
+    setDebateError(null);
     setIsStepping(true);
     stepDebate(debateId);
-  }, [debateId, isStepping]);
+  }, [debateId, isStepping, judgingPhase2Ready, handleAggregate]);
 
   // ── Return to idle ──
   const handleReturnHome = useCallback(() => {
@@ -420,6 +492,10 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
     setLatestPrompt(null);
     setPromptModalOpen(false);
     setIsStepping(false);
+    setJudgingPhase2Ready(false);
+    setJudgingTotal(0);
+    setDebateError(null);
+    setDebateResult(null);
   }, []);
 
   // ── View history (or resume ongoing) ──
@@ -552,6 +628,11 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
             setProDebaters(prev => prev.map(markDone));
             setConDebaters(prev => prev.map(markDone));
             setCurrentSpeakerId(null);
+            if (data.phase !== 'judging') setIsStepping(false);
+          },
+          onJudgingDone: (data) => {
+            setJudgingPhase2Ready(true);
+            setJudgingTotal(data.personaCount || 0);
             setIsStepping(false);
           },
           onDone: (data) => {
@@ -563,6 +644,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           },
           onError: (data) => {
             console.error('[Debate Error]', data.error);
+            setDebateError(data.error || '未知错误');
             setIsStepping(false);
             cleanupRef.current = null;
           },
@@ -572,6 +654,11 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
 
       // ── Finished → view only ──
       setWinner(debate.result?.winner || null);
+      if (debate.result) {
+        setDebateResult({ proTotal: debate.result.proTotalScore, conTotal: debate.result.conTotalScore, bestPro: debate.result.bestPro, bestCon: debate.result.bestCon, overallBest: debate.result.overallBest });
+      } else {
+        setDebateResult(null);
+      }
       setCurrentPhase('裁判评判');
       setCurrentSpeakerId(null);
       setRoundIndex(debate.messages.length);
@@ -585,6 +672,13 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
   // ── Phase index for display ──
   const currentPhaseIndex = PHASE_ORDER.indexOf(currentPhase);
 
+  function renderBestDebater(label: string, position: number | undefined | null, debaters: DebaterInfo[]) {
+    if (position == null) return null;
+    const posNames = ['', '一辩', '二辩', '三辩', '四辩'];
+    const d = debaters.find(r => r.positionLabel === posNames[position]);
+    return <p>{label}：{d?.roleName || `第${position}辩`}（{posNames[position] || `第${position}位`}）</p>;
+  }
+
   // ══════════════════════════════════════════════════════════════
   //  Render
   // ══════════════════════════════════════════════════════════════
@@ -595,7 +689,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
         <main className="flex-1 flex flex-col items-center justify-center px-4">
           <div className="text-center mb-12">
             <h2 className="font-hand text-4xl text-[#2C2C2C] mb-3">辩论赛</h2>
-            <p className="font-mono text-sm text-[#2C2C2C]/40">选择 8 位辩手和 1 位裁判，开始一场 AI 辩论赛</p>
+            <p className="font-mono text-base text-[#2C2C2C]/40">选择 8 位辩手和 1 位裁判，开始一场 AI 辩论赛</p>
           </div>
 
           <button
@@ -607,35 +701,84 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
 
           {/* ── History list ── */}
           <div className="mt-16 w-full max-w-md">
-            <p className="font-hand text-sm text-[#2C2C2C]/30 text-center border-t border-[#2C2C2C]/10 pt-6 mb-3">历史辩论记录</p>
+            <p className="font-hand text-base text-[#2C2C2C]/30 text-center border-t border-[#2C2C2C]/10 pt-6 mb-3">历史辩论记录</p>
             {debateList.length === 0 ? (
-              <p className="font-mono text-xs text-[#2C2C2C]/20 text-center">暂无辩论记录</p>
+              <p className="font-mono text-sm text-[#2C2C2C]/20 text-center">暂无辩论记录</p>
             ) : (
-              <div className="space-y-2 max-h-52 overflow-y-auto thin-scroll">
-                {debateList.map((d: any) => (
+              <>
+                <div className="space-y-2">
+                  {debateList.slice(0, 2).map((d: any) => (
+                    <button
+                      key={d.id}
+                      onClick={() => handleViewHistory(d.id)}
+                      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#2C2C2C]/5 transition-colors text-left cursor-pointer border border-transparent hover:border-[#2C2C2C]/10"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono text-base text-[#2C2C2C] truncate">{d.proTopic} | {d.conTopic}</p>
+                        <p className="font-mono text-xs text-[#2C2C2C]/30 mt-0.5">
+                          {new Date(d.createdAt).toLocaleDateString('zh-CN')} · {d._count.messages} 条发言
+                        </p>
+                      </div>
+                      {d.result?.winner && (
+                        <span className="shrink-0 ml-3 font-hand text-sm text-[#2C2C2C]/50">
+                          {d.result.winner === 'pro' ? '正方胜' : '反方胜'}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {debateList.length > 2 && (
                   <button
-                    key={d.id}
-                    onClick={() => handleViewHistory(d.id)}
-                    className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#2C2C2C]/5 transition-colors text-left cursor-pointer border border-transparent hover:border-[#2C2C2C]/10"
+                    onClick={() => setHistoryModalOpen(true)}
+                    className="w-full mt-2 py-2 text-center font-mono text-sm text-[#2C2C2C]/30 hover:text-[#2C2C2C]/60 transition-colors cursor-pointer rounded-lg hover:bg-[#2C2C2C]/5"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-mono text-sm text-[#2C2C2C] truncate">{d.proTopic} | {d.conTopic}</p>
-                      <p className="font-mono text-[10px] text-[#2C2C2C]/30 mt-0.5">
-                        {new Date(d.createdAt).toLocaleDateString('zh-CN')} · {d._count.messages} 条发言
-                      </p>
-                    </div>
-                    {d.result?.winner && (
-                      <span className="shrink-0 ml-3 font-hand text-xs text-[#2C2C2C]/50">
-                        {d.result.winner === 'pro' ? '正方胜' : '反方胜'}
-                      </span>
-                    )}
+                    更多记录 ({debateList.length - 2})
                   </button>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
 
           <DebateSetupModal isOpen={setupOpen} onClose={() => setSetupOpen(false)} onStart={handleSetupStart} />
+
+          {/* ── History modal ── */}
+          {historyModalOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
+              onClick={(e) => { if (e.target === e.currentTarget) setHistoryModalOpen(false); }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="历史辩论记录"
+            >
+              <div className="bg-white rounded-xl shadow-lg max-w-lg w-[90vw] max-h-[70vh] flex flex-col">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-[#2C2C2C]/10 shrink-0">
+                  <span className="font-hand text-base text-[#2C2C2C]">全部历史记录</span>
+                  <button onClick={() => setHistoryModalOpen(false)} className="font-mono text-sm text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 cursor-pointer">✕ 关闭</button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 thin-scroll">
+                  {debateList.map((d: any) => (
+                    <button
+                      key={d.id}
+                      onClick={() => { setHistoryModalOpen(false); handleViewHistory(d.id); }}
+                      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[#2C2C2C]/5 transition-colors text-left cursor-pointer border border-transparent hover:border-[#2C2C2C]/10"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono text-sm text-[#2C2C2C] truncate">{d.proTopic} | {d.conTopic}</p>
+                        <p className="font-mono text-xs text-[#2C2C2C]/30 mt-0.5">
+                          {new Date(d.createdAt).toLocaleDateString('zh-CN')} · {d._count.messages} 条发言
+                        </p>
+                      </div>
+                      {d.result?.winner && (
+                        <span className="shrink-0 ml-3 font-hand text-sm text-[#2C2C2C]/50">
+                          {d.result.winner === 'pro' ? '正方胜' : '反方胜'}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       )}
 
@@ -646,9 +789,9 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           <div className="flex-1 flex overflow-hidden min-h-0">
             {/* Left: Pro */}
             <div className="w-[200px] shrink-0 border-r border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll flex flex-col gap-3">
-              <h3 className="font-hand text-base text-[#2C2C2C] text-center shrink-0">正方</h3>
+              <h3 className="font-hand text-lg text-[#2C2C2C] text-center shrink-0">正方</h3>
               {proTopic && (
-                <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed shrink-0">{proTopic}</p>
+                <p className="font-hand text-lg text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed shrink-0">{proTopic}</p>
               )}
               {proDebaters.map(d => (
                 <DebaterAvatar key={d.roleId} debater={d} isSpeaking={d.status === 'speaking'} />
@@ -661,7 +804,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
               {debugMode && (
                 <button
                   onClick={() => latestPrompt && setPromptModalOpen(true)}
-                  className="fixed bottom-16 right-[210px] z-30 w-8 h-8 rounded-full bg-[#2C2C2C]/10 hover:bg-[#2C2C2C]/20 flex items-center justify-center transition-colors cursor-pointer"
+                  className="fixed top-[52px] right-[210px] z-30 w-8 h-8 rounded-full bg-[#2C2C2C]/10 hover:bg-[#2C2C2C]/20 flex items-center justify-center transition-colors cursor-pointer"
                   aria-label="查看 LLM 输入"
                 >
                   <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -682,9 +825,9 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
 
             {/* Right: Con */}
             <div className="w-[200px] shrink-0 border-l border-[#2C2C2C]/10 p-3 overflow-y-auto thin-scroll flex flex-col gap-3">
-              <h3 className="font-hand text-base text-[#2C2C2C] text-center shrink-0">反方</h3>
+              <h3 className="font-hand text-lg text-[#2C2C2C] text-center shrink-0">反方</h3>
               {conTopic && (
-                <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed shrink-0">{conTopic}</p>
+                <p className="font-hand text-lg text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed shrink-0">{conTopic}</p>
               )}
               {conDebaters.map(d => (
                 <DebaterAvatar key={d.roleId} debater={d} isSpeaking={d.status === 'speaking'} />
@@ -693,19 +836,28 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           </div>
 
           {/* ── Bottom bar ── */}
-          <div className="shrink-0 flex items-center gap-4 px-6 py-2.5 border-t border-[#2C2C2C]/10 bg-[#F2F2EE]/80 backdrop-blur-sm">
+          <div className="shrink-0 flex flex-col">
+            {debateError && (
+              <div className="mx-4 mt-2 px-4 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 font-mono text-sm flex items-center gap-2">
+                <span className="font-bold shrink-0">[!]</span>
+                <span className="flex-1">{debateError}</span>
+                <button onClick={() => setDebateError(null)} className="hover:text-red-900 cursor-pointer shrink-0">✕</button>
+              </div>
+            )}
+            <div className="flex items-center gap-4 px-6 py-2.5 border-t border-[#2C2C2C]/10 bg-[#F2F2EE]/80 backdrop-blur-sm">
             <button
               onClick={handleStep}
               disabled={isStepping}
-              className="px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-sm hover:bg-[#2C2C2C]/90 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+              className="px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-base hover:bg-[#2C2C2C]/90 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
             >
-              {isStepping ? '发言中...' : currentPhaseIndex >= PHASE_ORDER.length - 1 ? '裁判评判' : '下一步 →'}
+              {isStepping ? '发言中...' : judgingPhase2Ready ? '查看结果' : currentPhaseIndex >= PHASE_ORDER.length - 1 ? '裁判评判' : '下一步 →'}
             </button>
-            <span className="font-mono text-[10px] text-[#2C2C2C]/30">
-              {currentPhase} · 第 {roundIndex} 轮发言
+            <span className="font-mono text-xs text-[#2C2C2C]/30">
+              {judgingPhase2Ready ? `${judgingTotal} 位裁判已全部完成` : `${currentPhase} · 第 ${roundIndex} 轮发言`}
             </span>
           </div>
         </div>
+      </div>
       )}
 
       {/* ════════════ FINISHED ════════════ */}
@@ -715,12 +867,12 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           <div className="w-[200px] shrink-0 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto thin-scroll p-3 space-y-3">
               <h3 className="font-hand text-lg text-[#2C2C2C] text-center pb-2 border-b border-[#2C2C2C]/10 shrink-0">正方</h3>
-              {proTopic && <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed">{proTopic}</p>}
+              {proTopic && <p className="font-hand text-lg text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed">{proTopic}</p>}
               {proDebaters.map(d => (
                 <div key={d.roleId} className="flex flex-col items-center gap-1">
                   <AvatarIcon id={d.avatar ?? ''} size={40} />
-                  <span className="font-hand text-sm text-[#2C2C2C] text-center leading-tight">{d.roleName}</span>
-                  <span className="font-mono text-xs text-[#2C2C2C]/40">{d.positionLabel}</span>
+                  <span className="font-hand text-lg text-[#2C2C2C] text-center leading-tight">{d.roleName}</span>
+                  <span className="font-mono text-sm text-[#2C2C2C]/40">{d.positionLabel}</span>
                 </div>
               ))}
             </div>
@@ -731,9 +883,15 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
             <div className="mx-4 mt-4 p-4 rounded-xl bg-[#2C2C2C]/5 border border-[#2C2C2C]/10 text-center">
               <p className="font-hand text-xl text-[#2C2C2C]">辩论结束</p>
               {winner && <p className="font-hand text-lg text-[#2C2C2C]/70 mt-1">获胜方：{winner === 'pro' ? '正方' : '反方'}</p>}
+              {debateResult && (
+                <div className="font-mono text-sm text-[#2C2C2C]/40 mt-2 space-y-0.5">
+                  {renderBestDebater('正方最佳辩手', debateResult.bestPro, proDebaters)}
+                  {renderBestDebater('反方最佳辩手', debateResult.bestCon, conDebaters)}
+                </div>
+              )}
               <button
                 onClick={handleReturnHome}
-                className="mt-3 px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-sm hover:bg-[#2C2C2C]/90 transition-colors cursor-pointer active:scale-[0.98]"
+                className="mt-3 px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-base hover:bg-[#2C2C2C]/90 transition-colors cursor-pointer active:scale-[0.98]"
               >
                 返回
               </button>
@@ -743,6 +901,27 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
               {speeches.map((s, i) => (
                 <SpeechBubble key={i} speech={s} />
               ))}
+
+              {/* ── Result bubble at bottom ── */}
+              {winner && (
+                <div className="flex flex-col items-center max-w-[80%] mx-auto">
+                  <span className="font-hand text-base text-[#2C2C2C]/60 mb-2">裁判结果</span>
+                  <div className="w-full p-4 rounded-xl bg-[#2C2C2C]/4">
+                    <div className="text-center space-y-2">
+                      <p className="font-hand text-xl text-[#2C2C2C]">获胜方：{winner === 'pro' ? '正方' : '反方'}</p>
+                      {debateResult && (
+                        <>
+                          <p className="font-mono text-base text-[#2C2C2C]/60">正方 {debateResult.proTotal.toFixed(2)} 分 — 反方 {debateResult.conTotal.toFixed(2)} 分</p>
+                          <div className="font-mono text-sm text-[#2C2C2C]/40 pt-1 space-y-0.5">
+                            {renderBestDebater('正方最佳辩手', debateResult.bestPro, proDebaters)}
+                            {renderBestDebater('反方最佳辩手', debateResult.bestCon, conDebaters)}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -750,12 +929,12 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           <div className="w-[200px] shrink-0 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto thin-scroll p-3 space-y-3">
               <h3 className="font-hand text-lg text-[#2C2C2C] text-center pb-2 border-b border-[#2C2C2C]/10 shrink-0">反方</h3>
-              {conTopic && <p className="font-hand text-sm text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed">{conTopic}</p>}
+              {conTopic && <p className="font-hand text-lg text-[#2C2C2C]/60 text-center whitespace-pre-wrap leading-relaxed">{conTopic}</p>}
               {conDebaters.map(d => (
                 <div key={d.roleId} className="flex flex-col items-center gap-1">
                   <AvatarIcon id={d.avatar ?? ''} size={40} />
-                  <span className="font-hand text-sm text-[#2C2C2C] text-center leading-tight">{d.roleName}</span>
-                  <span className="font-mono text-xs text-[#2C2C2C]/40">{d.positionLabel}</span>
+                  <span className="font-hand text-lg text-[#2C2C2C] text-center leading-tight">{d.roleName}</span>
+                  <span className="font-mono text-sm text-[#2C2C2C]/40">{d.positionLabel}</span>
                 </div>
               ))}
             </div>

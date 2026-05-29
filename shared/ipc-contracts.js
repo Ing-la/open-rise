@@ -44,15 +44,17 @@ const IPC = {
 
   // ── 辩论 (Debate) ───────────────────────────────────────
   DEBATE: {
-    CREATE:  { channel: 'debate:create',  params: { proTopic: '', conTopic: '', background: '', proRoles: [], conRoles: [], judgeRoleId: '', debugMode: false }, returns: { debateId: '' } },
+    CREATE:  { channel: 'debate:create',  params: { proTopic: '', conTopic: '', background: '', proRoles: [], conRoles: [], judgeBrainId: '', debugMode: false }, returns: { debateId: '' } },
     RESUME:  { channel: 'debate:resume',  params: { debateId: '', debugMode: false }, returns: { debateId: '' } },
-    STEP:    { channel: 'debate:step',    params: { debateId: '' }, note: 'ipcMain.on → 通过 debate:delta/prompt/round_done/done/error 推送' },
+    STEP:      { channel: 'debate:step',      params: { debateId: '' }, note: 'ipcMain.on → 通过 debate:delta/prompt/round_done/judging_done/error 推送' },
+AGGREGATE: { channel: 'debate:aggregate', params: { debateId: '' }, note: 'ipcMain.handle → 返回 { winner, bestPro, bestCon, overallBest, proTotal, conTotal }' },
     STOP:    { channel: 'debate:stop',    params: {}, note: 'ipcMain.on, 发送中止信号' },
     LIST:    { channel: 'debate:list',    params: {}, returns: { debates: [] } },
     GET:     { channel: 'debate:get',     params: { id: '' }, returns: { debate: null } },
     DELTA:   { channel: 'debate:delta',   note: '推送: { roleId, roleName, content, phase, side, position, isFirst }' },
     PROMPT:  { channel: 'debate:prompt',  note: '推送: { system, user } — 调试模式' },
-    ROUND_DONE:{ channel: 'debate:round_done', note: '推送: { phase, side, position, label, roleId, roleName, content, charsUsed, charBudget, roundIndex, sideCharsPro, sideCharsCon }' },
+    ROUND_DONE:{ channel: 'debate:round_done', note: '推送: { phase, side, position, label, roleId, roleName, content, charsUsed, charBudget, roundIndex, personaIndex, totalPersonas, sideCharsPro, sideCharsCon }' },
+JUDGING_DONE:{ channel: 'debate:judging_done', note: '推送: { personaCount } — 所有裁判完成' },
     DONE:    { channel: 'debate:done',    note: '推送: { winner, scores, summary }' },
     ERROR:   { channel: 'debate:error',   note: '推送: { error }' },
   },

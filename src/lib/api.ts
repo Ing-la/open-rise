@@ -36,8 +36,10 @@ interface OpenRiseAPI {
     onDelta(cb: (data: any) => void): () => void;
     onPrompt(cb: (data: any) => void): () => void;
     onRoundDone(cb: (data: any) => void): () => void;
+    onJudgingDone(cb: (data: any) => void): () => void;
     onDone(cb: (data: any) => void): () => void;
     onError(cb: (data: any) => void): () => void;
+    aggregate(params: { debateId: string }): Promise<{ winner: string; bestPro: any; bestCon: any; overallBest: any; proTotal: number; conTotal: number }>;
   };
   agent: {
     createSession(params: { roleId: string; title?: string }): Promise<{ id: string }>;
@@ -213,9 +215,10 @@ export const getAgentSessionCompactInfo = (sessionId: string) =>
 // ── Debate ──
 
 export interface DebateCallbacks {
-  onDelta?: (data: { roleId: string; roleName?: string; content: string; phase?: string; side?: string; position?: number | string; isFirst?: boolean }) => void;
+  onDelta?: (data: { roleId: string; roleName?: string; content: string; phase?: string; side?: string; position?: number | string; isFirst?: boolean; personaIndex?: number; totalPersonas?: number }) => void;
   onPrompt?: (data: { system: string; user: string }) => void;
-  onRoundDone?: (data: { phase: string; side: string; position: number | string; label: string; roleId: string; roleName: string; content: string; charsUsed: number; charBudget: number; roundIndex: number; sideCharsPro?: number; sideCharsCon?: number }) => void;
+  onRoundDone?: (data: { phase: string; side: string; position: number | string; label: string; roleId: string; roleName: string; content: string; charsUsed: number; charBudget: number; roundIndex: number; personaIndex?: number; totalPersonas?: number; sideCharsPro?: number; sideCharsCon?: number }) => void;
+  onJudgingDone?: (data: { personaCount: number }) => void;
   onDone?: (data: { winner: string; scores: any[]; summary: string }) => void;
   onError?: (data: { error: string }) => void;
 }
@@ -248,6 +251,7 @@ export function subscribeDebate(callbacks: DebateCallbacks): () => void {
   if (callbacks.onDelta) cleanups.push(api!.debate.onDelta(callbacks.onDelta));
   if (callbacks.onPrompt) cleanups.push(api!.debate.onPrompt(callbacks.onPrompt));
   if (callbacks.onRoundDone) cleanups.push(api!.debate.onRoundDone(callbacks.onRoundDone));
+  if (callbacks.onJudgingDone) cleanups.push(api!.debate.onJudgingDone(callbacks.onJudgingDone));
   if (callbacks.onDone) cleanups.push(api!.debate.onDone(callbacks.onDone));
   if (callbacks.onError) cleanups.push(api!.debate.onError(callbacks.onError));
 
@@ -256,6 +260,9 @@ export function subscribeDebate(callbacks: DebateCallbacks): () => void {
 
 export const listDebates = () =>
   isElectron ? api!.debate.list() : Promise.resolve([]);
+
+export const aggregateDebate = (debateId: string) =>
+  isElectron ? api!.debate.aggregate({ debateId }) : Promise.resolve({ winner: '', bestPro: null, bestCon: null, overallBest: null, proTotal: 0, conTotal: 0 });
 
 export const getDebate = (id: string) =>
   isElectron ? api!.debate.get(id) : Promise.resolve(null);

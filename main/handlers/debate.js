@@ -24,7 +24,7 @@ const POSITION_NAMES = ['', '一辩', '二辩', '三辩', '四辩'];
 const PHASE_PROMPTS = {
   opening: {
     pro: '现在是你方立论环节。作为正方开篇，为本场辩论定下基调。篇幅建议 600~700 字之间。',
-    con: '现在是你方立论环节。作为反方开篇，建立本方论证框架。篇幅建议 600~700 字之间。',
+    con: '现在是你方立论环节。作为反方开篇，建立本方论证框架。此时无需深入反驳正方一辩的发言，驳论环节会专门处理。篇幅建议 600~700 字之间。',
   },
   rebuttal: {
     con: '现在是驳论环节，你的任务是反驳正方立论、加固本方立场。篇幅建议 300~400 字之间。',
@@ -38,27 +38,56 @@ const PHASE_PROMPTS = {
   },
 };
 
-const JUDGE_SYSTEM = `你是本场辩论赛的裁判，请根据整场辩论记录进行评判。
+const JUDGE_PERSONAS = [
+  { id: 1,  name: '严谨学者',  weights: { content: 0.25, logic: 0.45, expression: 0.05, rebuttal: 0.25 },
+    promptSoul: '你以逻辑严密著称，在你看来论证漏洞不可原谅，而对语言风格你不太在意。' },
+  { id: 2,  name: '修辞大师',  weights: { content: 0.20, logic: 0.15, expression: 0.50, rebuttal: 0.15 },
+    promptSoul: '你是语言艺术的鉴赏家，比起干巴巴的事实陈述，你更看重表达的说服力和感染力。' },
+  { id: 3,  name: '战术分析师', weights: { content: 0.15, logic: 0.25, expression: 0.10, rebuttal: 0.50 },
+    promptSoul: '你专注于辩论中的攻防转换，谁能有效反驳对方、抓住漏洞，谁就能赢得你的高分。' },
+  { id: 4,  name: '中立主义者', weights: { content: 0.30, logic: 0.25, expression: 0.20, rebuttal: 0.25 },
+    promptSoul: '你以公正均衡的态度评分，不偏重任何单一维度，追求全面的评判。' },
+  { id: 5,  name: '事实核查官', weights: { content: 0.55, logic: 0.25, expression: 0.05, rebuttal: 0.15 },
+    promptSoul: '你只相信事实和证据，华丽的辞藻在你面前毫无价值，数据不准确更是不可原谅。' },
+  { id: 6,  name: '即兴艺术家', weights: { content: 0.15, logic: 0.15, expression: 0.35, rebuttal: 0.35 },
+    promptSoul: '你欣赏临场发挥和创新角度，能够灵活应对突发情况的辩手最能打动你。' },
+  { id: 7,  name: '传统守护者', weights: { content: 0.35, logic: 0.30, expression: 0.25, rebuttal: 0.10 },
+    promptSoul: '你遵循辩论传统，看重立论框架的完整性和总结陈词的升华能力，反驳技巧不在你优先考虑之列。' },
+  { id: 8,  name: '激进辩手',   weights: { content: 0.10, logic: 0.20, expression: 0.15, rebuttal: 0.55 },
+    promptSoul: '你偏好攻击性辩论风格，认为辩论的本质是击败对手，强有力的反驳比温和的论述更有价值。' },
+  { id: 9,  name: '温和评判',   weights: { content: 0.25, logic: 0.20, expression: 0.30, rebuttal: 0.25 },
+    promptSoul: '你以包容态度评分，关注辩论的整体质量和建设性对话，不因个别激进言论而偏颇。' },
+];
 
-评分维度（满分 10 分）：
-- 内容与论据（权重 30%）：论据充分度、事实准确性
-- 逻辑与推理（权重 25%）：论证严密性、逻辑自洽性
-- 表达与语言（权重 20%）：语言流畅度、说服力
-- 反驳与应变（权重 25%）：反驳精准度、抓对方漏洞能力
+function buildJudgeSystemPrompt(persona) {
+  return `你是本场辩论赛的裁判，${persona.name}。
 
-加权总分 = content×0.30 + logic×0.25 + expression×0.20 + rebuttal×0.25
+${persona.promptSoul}`;
+}
 
-输出严格 JSON：
-{
-  "scores": [
-    { "side": "pro/con", "position": 1-4, "content": 1-10, "logic": 1-10, "expression": 1-10, "rebuttal": 1-10, "comment": "评语" }
-  ],
-  "winner": "pro/con",
-  "bestPro": 1-4,
-  "bestCon": 1-4,
-  "overallBest": 1-4,
-  "summary": "总体评价"
-}`;
+const JUDGE_SCORING_RULES = `评分维度（满分 10 分，整数）：
+- 内容与论据（content）：论据充分度、事实准确性
+- 逻辑与推理（logic）：论证严密性、逻辑自洽性
+- 表达与语言（expression）：语言流畅度、说服力
+- 反驳与应变（rebuttal）：反驳精准度、抓对方漏洞能力
+
+评分参考标准：
+- 8-10 分：出色，远超预期
+- 6-7 分：良好，达到预期
+- 4-5 分：一般，有改进空间
+- 1-3 分：差，明显不足
+
+输出严格 JSON 数组（每个辩手一个元素），不要包含任何其他内容：
+
+[
+  { "side": "pro/con", "position": 1-4, "content": 0-10, "logic": 0-10, "expression": 0-10, "rebuttal": 0-10, "comment": "约 200 字的点评" },
+  ...
+]`;
+
+function pickN(n, arr) {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  Prompt builders
@@ -72,8 +101,9 @@ function buildSystemPrompt(role, side, posNum, proTopic, conTopic, background, r
   p += `你现在参加一场辩论赛。\n`;
   p += `正方辩题：${proTopic}\n`;
   p += `反方辩题：${conTopic}\n`;
-  if (background) p += `背景：${background}\n`;
-  p += `你的立场：${sideName}\n`;
+  if (background) p += `背景：${background}\n\n`;
+  const myTopic = side === 'pro' ? proTopic : conTopic;
+  p += `你的立场：${sideName}（${myTopic}）\n`;
   p += `你的位置：${posName}\n\n`;
   p += `你的唯一目标是在这场辩论中获胜。尽一切努力说服裁判和观众——用最强有力的论据、最严密的逻辑，抓住对方每一个漏洞。\n\n`;
 
@@ -88,7 +118,7 @@ function buildSystemPrompt(role, side, posNum, proTopic, conTopic, background, r
   return p;
 }
 
-function buildUserMessage(allMsgs, roundPhase, mySide, myUsed, myBudget, oppUsed, oppBudget, roundIdx) {
+function buildUserMessage(allMsgs, roundPhase, mySide, myUsed, myBudget, oppUsed, oppBudget, roundIdx, proTopic, conTopic) {
   const roundDef = ROUNDS.find(r => r.phase === roundPhase);
   const label = roundDef ? roundDef.label : roundPhase;
 
@@ -115,7 +145,10 @@ function buildUserMessage(allMsgs, roundPhase, mySide, myUsed, myBudget, oppUsed
     msg += `本环节建议输出约 ${lo}~${roundDef.budget} 字的内容。\n`;
   }
 
-  msg += `\n轮到你发言了：`;
+  const sideName = mySide === 'pro' ? '正方' : '反方';
+  const myTopic = mySide === 'pro' ? proTopic : conTopic;
+  msg += `\n重申立场：${sideName} —— ${myTopic}\n\n`;
+  msg += `轮到你发言了：`;
   return msg;
 }
 
@@ -286,7 +319,7 @@ async function executeSpeech(event, state, speaker) {
   const oppUsed = state.perSideChars[opp];
 
   const sys = buildSystemPrompt(role, side, pos, state.proTopic, state.conTopic, state.background, phase);
-  const usr = buildUserMessage(state.allMsgs, phase, side, myUsed, budget, oppUsed, budget, ++state.roundIdx);
+  const usr = buildUserMessage(state.allMsgs, phase, side, myUsed, budget, oppUsed, budget, ++state.roundIdx, state.proTopic, state.conTopic);
 
   // Debug mode: send prompt
   if (state.debugMode) {
@@ -350,17 +383,15 @@ async function executeSpeech(event, state, speaker) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Execute judging
+//  Judge phase 1 — parallel LLM scoring
 // ═══════════════════════════════════════════════════════════════
 
-async function executeJudging(event, state) {
+async function executeJudgingPhase1(event, state) {
   const judgeEntry = state.roleCache.get(state.judgeRoleId);
   if (!judgeEntry) throw new Error(`裁判大脑 ${state.judgeRoleId} 未加载`);
+  const judgeBrain = judgeEntry.brain;
 
-  const judgeId = state.judgeRoleId;
-  const judgeName = judgeEntry.name || '裁判';
-
-  // Build history
+  // Build full debate history
   let history = '';
   for (const m of state.allMsgs) {
     const s = m.side === 'pro' ? '正方' : m.side === 'con' ? '反方' : '裁判';
@@ -368,151 +399,201 @@ async function executeJudging(event, state) {
     history += `[${s}${pos}]：${m.content}\n`;
   }
 
-  const sys = `你是${judgeName}。\n\n${JUDGE_SYSTEM}`;
-  const usr = `以下是本场辩论的完整记录：\n\n${history}\n\n请给出你的评判：`;
-
-  // Debug mode: send prompt
-  if (state.debugMode) {
-    event.sender.send('debate:prompt', { system: sys, user: usr });
-  }
-
-  // Send judge phase start
-  event.sender.send('debate:delta', {
-    roleId: judgeId,
-    roleName: judgeName,
-    content: '',
-    phase: 'judging',
-    side: 'judge',
-    position: 0,
-    isFirst: true,
-  });
-
-  // Stream judge LLM call (same path as all debaters)
-  let judgeText = '', tokens = 0;
-  await streamSpeech(judgeEntry.brain, [
-    { role: 'system', content: sys },
-    { role: 'user', content: usr },
-  ], 2048,
-    () => {},
-    (c, t) => { judgeText = c; tokens = t; }
-  );
-
-  if (!judgeText.trim()) throw new Error('裁判输出为空');
-
-  // Parse judge result (BEFORE saving to DB)
-  let judgeResult;
-  try {
-    judgeResult = JSON.parse(judgeText.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim());
-  } catch {
-    throw new Error(`裁判输出无法解析为 JSON：${judgeText.slice(0, 200)}`);
-  }
-
-  // Build readable text from parsed result (what users see)
-  const winnerLabel = judgeResult.winner === 'pro' ? '正方' : '反方';
-  let readableText = '**辩论结束**\n\n---\n\n';
-  readableText += `**获胜方：${winnerLabel}**\n\n`;
-  if (judgeResult.overallBest) readableText += `**全场最佳辩手：${POSITION_NAMES[judgeResult.overallBest] || ''}**\n\n`;
-  if (judgeResult.bestPro) readableText += `正方最佳辩手：${POSITION_NAMES[judgeResult.bestPro] || ''}\n`;
-  if (judgeResult.bestCon) readableText += `反方最佳辩手：${POSITION_NAMES[judgeResult.bestCon] || ''}\n`;
-  readableText += '\n---\n\n### 评分明细\n\n| 辩手 | 内容 | 逻辑 | 表达 | 反驳 | 总分 | 评语 |\n|------|------|------|------|------|------|------|\n';
-  if (judgeResult.scores) {
-    for (const sc of judgeResult.scores) {
-      const sideLabel = sc.side === 'pro' ? '正方' : '反方';
-      const posName = POSITION_NAMES[sc.position] || '';
-      const total = ((sc.content || 0) * 0.30 + (sc.logic || 0) * 0.25 + (sc.expression || 0) * 0.20 + (sc.rebuttal || 0) * 0.25).toFixed(1);
-      readableText += `| ${sideLabel}${posName} | ${sc.content || '-'} | ${sc.logic || '-'} | ${sc.expression || '-'} | ${sc.rebuttal || '-'} | ${total} | ${sc.comment || ''} |\n`;
-    }
-  }
-  if (judgeResult.summary) {
-    readableText += `\n---\n\n### 裁判总结\n\n${judgeResult.summary}\n`;
-  }
-
-  // Stream readable text to frontend (not raw JSON)
-  for (let i = 0; i < readableText.length; i += 5) {
-    event.sender.send('debate:delta', { roleId: judgeId, content: readableText.slice(i, i + 5), isFirst: false });
-  }
-
-  // Save judge message to DB (readable text, not raw JSON)
-  await prisma.debateMessage.create({
-    data: {
-      debateId: state.debateId,
-      roleId: judgeId,
-      side: 'judge',
-      position: 0,
-      round: 'judging',
-      content: readableText,
-      tokenCount: tokens,
-      charCount: readableText.length,
-      roundIndex: ++state.roundIdx,
-    },
-  });
-
-  // Save scores
   const allPositionDefs = [
     ...state.proRoles.map(p => ({ roleId: p.roleId, side: 'pro', position: p.position })),
     ...state.conRoles.map(p => ({ roleId: p.roleId, side: 'con', position: p.position })),
   ];
 
-  if (judgeResult.scores) {
-    for (const sc of judgeResult.scores) {
+  // Sequential judging: one judge at a time — LLM → parse → save → render → next
+  for (let j = 0; j < state.judgePersonas.length; j++) {
+    const persona = state.judgePersonas[j];
+
+    // Debug: send prompt (first judge only)
+    if (state.debugMode && j === 0) {
+      const sampleSys = buildJudgeSystemPrompt(persona);
+      const debugUsr = `以下是本场辩论的完整记录：\n\n${history}\n\n${JUDGE_SCORING_RULES}\n\n请根据你对 ${persona.name} 的角色定位给出评分：`;
+      event.sender.send('debate:prompt', { system: `（3 位裁判依次评分，此为第一位提示词示例）\n\n${sampleSys}`, user: debugUsr });
+    }
+
+    // 1. Call LLM — system only has identity, scoring rules are in user msg (near output)
+    const sys = buildJudgeSystemPrompt(persona);
+    const usr = `以下是本场辩论的完整记录：\n\n${history}\n\n${JUDGE_SCORING_RULES}\n\n请根据你对 ${persona.name} 的角色定位给出评分：`;
+
+    let text = '', tokens = 0;
+    await streamSpeech(judgeBrain, [
+      { role: 'system', content: sys },
+      { role: 'user', content: usr },
+    ], 8192,
+      () => {},
+      (c, t) => { text = c; tokens = t; }
+    );
+
+    if (!text.trim()) throw new Error(`裁判 ${persona.name} 输出为空`);
+
+    // 2. Parse JSON scores
+    let scores;
+    try {
+      scores = JSON.parse(text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim());
+    } catch {
+      throw new Error(`裁判 ${persona.name} 输出无法解析为 JSON：${text.slice(0, 200)}`);
+    }
+
+    if (!Array.isArray(scores)) throw new Error(`裁判 ${persona.name} 输出不是数组`);
+
+    // 3. Calculate weighted totals
+    const w = persona.weights;
+    for (const sc of scores) {
+      sc.weightedTotal = (sc.content || 0) * w.content + (sc.logic || 0) * w.logic + (sc.expression || 0) * w.expression + (sc.rebuttal || 0) * w.rebuttal;
+    }
+
+    // 4. Save to DebateScore
+    for (const sc of scores) {
       const def = allPositionDefs.find(p => p.side === sc.side && p.position === sc.position);
       if (!def) continue;
       await prisma.debateScore.create({
         data: {
           debateId: state.debateId,
           roleId: def.roleId,
+          judgeRoleId: state.judgeRoleId,
+          judgePersonaId: persona.id,
           side: sc.side,
           position: sc.position,
           scoreContent: sc.content,
           scoreLogic: sc.logic,
           scoreExpression: sc.expression,
           scoreRebuttal: sc.rebuttal,
-          totalScore: (sc.content || 0) * 0.30 + (sc.logic || 0) * 0.25 + (sc.expression || 0) * 0.20 + (sc.rebuttal || 0) * 0.25,
-          judgeComment: sc.comment,
+          weightedTotal: sc.weightedTotal,
+          judgeComment: sc.comment || null,
         },
       });
     }
+
+    // 5. Build readable text
+    let readable = `**${persona.name} · 评分**\n\n`;
+    readable += `| 辩手 | 内容 | 逻辑 | 表达 | 反驳 | 加权总分 | 评语 |\n`;
+    readable += `|------|------|------|------|------|---------|------|\n`;
+    for (const sc of scores) {
+      const sideLabel = sc.side === 'pro' ? '正方' : '反方';
+      const posName = POSITION_NAMES[sc.position] || '';
+      readable += `| ${sideLabel}${posName} | ${sc.content ?? '-'} | ${sc.logic ?? '-'} | ${sc.expression ?? '-'} | ${sc.rebuttal ?? '-'} | ${sc.weightedTotal.toFixed(2)} | ${sc.comment || ''} |\n`;
+    }
+
+    // 6. Send delta to frontend (simulated streaming)
+    event.sender.send('debate:delta', {
+      roleId: state.judgeRoleId,
+      roleName: `${persona.name} · 裁判`,
+      content: '',
+      phase: 'judging',
+      side: 'judge',
+      position: 0,
+      isFirst: true,
+      personaIndex: j,
+      totalPersonas: state.judgePersonas.length,
+    });
+
+    for (let i = 0; i < readable.length; i += 5) {
+      event.sender.send('debate:delta', {
+        roleId: state.judgeRoleId,
+        content: readable.slice(i, i + 5),
+        isFirst: false,
+      });
+    }
+
+    // 7. Persist judge message to DB
+    await prisma.debateMessage.create({
+      data: {
+        debateId: state.debateId,
+        roleId: state.judgeRoleId,
+        side: 'judge',
+        position: 0,
+        round: 'judging',
+        content: readable,
+        tokenCount: tokens || null,
+        charCount: readable.length,
+        roundIndex: ++state.roundIdx,
+      },
+    });
+
+    // 8. Send round_done per judge
+    event.sender.send('debate:round_done', {
+      phase: 'judging',
+      side: 'judge',
+      position: 0,
+      label: '裁判评判',
+      roleId: state.judgeRoleId,
+      roleName: `${persona.name} · 裁判`,
+      content: readable,
+      charsUsed: readable.length,
+      charBudget: 0,
+      roundIndex: state.roundIdx,
+      personaIndex: j,
+      totalPersonas: state.judgePersonas.length,
+      sideCharsPro: 0,
+      sideCharsCon: 0,
+    });
   }
 
+  // Signal all judges done
+  event.sender.send('debate:judging_done', { personaCount: state.judgePersonas.length });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Judge phase 2 — aggregate scores & determine winner
+// ═══════════════════════════════════════════════════════════════
+
+async function aggregateJudging(state) {
+  const scores = await prisma.debateScore.findMany({
+    where: { debateId: state.debateId, weightedTotal: { not: null } },
+  });
+
+  // Group by roleId, collect weightedTotals from all judges
+  const byRole = {};
+  for (const sc of scores) {
+    if (!byRole[sc.roleId]) {
+      byRole[sc.roleId] = { side: sc.side, position: sc.position, roleId: sc.roleId, totals: [] };
+    }
+    if (sc.weightedTotal != null) byRole[sc.roleId].totals.push(sc.weightedTotal);
+  }
+
+  // Average per debater
+  const avgs = Object.values(byRole).map(d => ({
+    ...d,
+    average: d.totals.length > 0 ? d.totals.reduce((a, b) => a + b, 0) / d.totals.length : 0,
+  }));
+
+  // Team totals
+  const proSum = avgs.filter(d => d.side === 'pro').reduce((s, d) => s + d.average, 0);
+  const conSum = avgs.filter(d => d.side === 'con').reduce((s, d) => s + d.average, 0);
+  const winner = proSum >= conSum ? 'pro' : 'con';
+
+  // Best debaters
+  const allBest = avgs.reduce((best, d) => (!best || d.average > best.average) ? d : best, null);
+  const proBest = avgs.filter(d => d.side === 'pro').reduce((best, d) => (!best || d.average > best.average) ? d : best, null);
+  const conBest = avgs.filter(d => d.side === 'con').reduce((best, d) => (!best || d.average > best.average) ? d : best, null);
+
+  // Write results
   await prisma.debateResult.create({
     data: {
       debateId: state.debateId,
-      winner: judgeResult.winner || 'pro',
-      bestPro: judgeResult.bestPro || null,
-      bestCon: judgeResult.bestCon || null,
-      overallBest: judgeResult.overallBest || null,
-      bestSide: judgeResult.bestSide || null,
-      judgeSummary: judgeResult.summary || null,
+      winner,
+      bestPro: proBest?.position || null,
+      bestCon: conBest?.position || null,
+      overallBest: allBest?.position || null,
+      proTotalScore: proSum,
+      conTotalScore: conSum,
+      judgeIds: JSON.stringify(state.judgePersonas.map(p => p.id)),
     },
   });
 
   await prisma.debate.update({
     where: { id: state.debateId },
-    data: { status: 'completed', summary: judgeResult.summary || null },
+    data: { status: 'completed' },
   });
 
-  event.sender.send('debate:round_done', {
-    phase: 'judging',
-    side: 'judge',
-    position: 0,
-    label: '裁判评判',
-    roleId: judgeId,
-    roleName: judgeName,
-    content: readableText,
-    charsUsed: readableText.length,
-    charBudget: 0,
-    roundIndex: state.roundIdx,
-    sideCharsPro: 0,
-    sideCharsCon: 0,
-  });
-
-  event.sender.send('debate:done', {
-    winner: judgeResult.winner,
-    scores: judgeResult.scores || [],
-    summary: judgeResult.summary || '',
-  });
-
+  active.delete(state.debateId);
   state.completed = true;
+
+  return { winner, bestPro: proBest?.position, bestCon: conBest?.position, overallBest: allBest?.position, proTotal: proSum, conTotal: conSum };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -600,6 +681,15 @@ module.exports = function (ipcMain) {
       data: { debateId: debate.id, roleId: judgeBrainId, side: 'judge', position: 0, brainId: judgeBrainId },
     });
 
+    // Randomly select 3 judge personas
+    const selectedPersonas = pickN(3, JUDGE_PERSONAS);
+
+    // Persist selected personas
+    await prisma.debate.update({
+      where: { id: debate.id },
+      data: { judgePersonas: JSON.stringify(selectedPersonas.map(p => p.id)) },
+    });
+
     // 3. Initialize state
     const state = {
       debateId: debate.id,
@@ -607,6 +697,7 @@ module.exports = function (ipcMain) {
       proRoles: allPositionDefs.filter(p => p.side === 'pro'),
       conRoles: allPositionDefs.filter(p => p.side === 'con'),
       judgeRoleId: judgeBrainId,
+      judgePersonas: selectedPersonas,
       roleCache,
       allMsgs: [],
       roundIdx: 0,
@@ -660,6 +751,13 @@ module.exports = function (ipcMain) {
       judgeRoleId = judgePosition.roleId;
       const brain = await prisma.brain.findUnique({ where: { id: judgePosition.brainId } });
       if (brain) roleCache.set(judgeRoleId, { name: '裁判', brain });
+    }
+
+    // Recover judge personas from DB
+    let judgePersonas = [];
+    if (debate.judgePersonas) {
+      const personaIds = JSON.parse(debate.judgePersonas);
+      judgePersonas = personaIds.map(id => JUDGE_PERSONAS.find(p => p.id === id)).filter(Boolean);
     }
 
     // Reconstruct state from existing messages
@@ -726,6 +824,7 @@ module.exports = function (ipcMain) {
       proRoles: positionDefs.filter(p => p.side === 'pro').map(p => ({ roleId: p.roleId, position: p.position })),
       conRoles: positionDefs.filter(p => p.side === 'con').map(p => ({ roleId: p.roleId, position: p.position })),
       judgeRoleId,
+      judgePersonas,
       roleCache,
       allMsgs,
       roundIdx: allMsgs.length,
@@ -759,8 +858,7 @@ module.exports = function (ipcMain) {
       const speaker = getNextSpeaker(state);
 
       if (speaker.phase === 'judging') {
-        await executeJudging(event, state);
-        active.delete(debateId);
+        await executeJudgingPhase1(event, state);
         return;
       }
 
@@ -769,5 +867,14 @@ module.exports = function (ipcMain) {
       console.error('[debate:step]', err);
       event.sender.send('debate:error', { error: err.message || '发言过程出错' });
     }
+  });
+
+  // ── Aggregate judge results (Phase 2) ──
+  ipcMain.handle('debate:aggregate', async (_event, { debateId }) => {
+    const state = active.get(debateId);
+    if (!state) throw new Error(`辩论 ${debateId} 未找到或已结束`);
+    if (state.completed) throw new Error('辩论已结束');
+
+    return aggregateJudging(state);
   });
 };

@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld('openriseAPI', {
     create: (params) => ipcRenderer.invoke('debate:create', params),
     resume: (params) => ipcRenderer.invoke('debate:resume', params),
     step:   (params) => ipcRenderer.send('debate:step', params),
+    aggregate: (params) => ipcRenderer.invoke('debate:aggregate', params),
     stop:   ()       => ipcRenderer.send('debate:stop'),
     list:   ()       => ipcRenderer.invoke('debate:list'),
     get:    (id)     => ipcRenderer.invoke('debate:get', id),
@@ -116,6 +117,11 @@ contextBridge.exposeInMainWorld('openriseAPI', {
       const h = (_e, d) => cb(d);
       ipcRenderer.on('debate:done', h);
       return () => ipcRenderer.removeListener('debate:done', h);
+    },
+    onJudgingDone: (cb) => {
+      const h = (_e, d) => cb(d);
+      ipcRenderer.on('debate:judging_done', h);
+      return () => ipcRenderer.removeListener('debate:judging_done', h);
     },
     onError: (cb) => {
       const h = (_e, d) => cb(d);

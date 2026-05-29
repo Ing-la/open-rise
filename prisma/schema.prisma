@@ -86,8 +86,9 @@ model Debate {
   conTopic    String   // 反方辩题
   background  String?  // 背景资料
   debugMode   Boolean  @default(false) // 调试模式
-  summary     String?  // 辩论结束后由裁判 LLM 输出自动生成的摘要
-  status      String   @default("ongoing") // "ongoing" | "completed"
+  summary         String?  // 辩论结束后由裁判 LLM 输出自动生成的摘要
+  judgePersonas   String?  // JSON 数组，如 "[1,3,7]"，记录本场选中的 3 个裁判人格 id
+  status          String   @default("ongoing") // "ongoing" | "completed"
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -132,20 +133,24 @@ model DebateMessage {
 model DebateScore {
   id              String   @id @default(uuid())
   debateId        String
-  roleId          String
+  roleId          String   // 辩手 roleId
+  judgeRoleId     String?  // 评分裁判 roleId
+  judgePersonaId  Int?     // 裁判人格编号 1-9
   side            String   // "pro" | "con"
   position        Int      // 1-4
-  scoreContent    Int?     // 内容/论据 (30%)
-  scoreLogic      Int?     // 逻辑/推理 (25%)
-  scoreExpression Int?     // 表达/语言 (20%)
-  scoreRebuttal   Int?     // 反驳/应变 (25%)
-  totalScore      Float?   // 加权总分
+  scoreContent    Int?     // 内容/论据 原始分 0-10
+  scoreLogic      Int?     // 逻辑/推理 原始分 0-10
+  scoreExpression Int?     // 表达/语言 原始分 0-10
+  scoreRebuttal   Int?     // 反驳/应变 原始分 0-10
+  totalScore      Float?   // 旧单裁判系统的加权总分（向后兼容）
+  weightedTotal   Float?   // 程序按裁判人格权重计算的加权总分
   judgeComment    String?  // 裁判评语
   createdAt       DateTime @default(now())
 
   debate          Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
 
   @@index([debateId])
+  @@index([judgeRoleId])
 }
 
 model DebateResult {
@@ -155,7 +160,9 @@ model DebateResult {
   bestPro         Int?     // 正方最佳辩手 position
   bestCon         Int?     // 反方最佳辩手 position
   overallBest     Int?     // 全场最佳辩手 position
-  bestSide        String?  // "pro" | "con"
+  proTotalScore   Float?   // 正方总分（3 裁判平均加权总分之和）
+  conTotalScore   Float?   // 反方总分（3 裁判平均加权总分之和）
+  judgeIds        String?  // JSON 数组，参与本次评判的裁判人格 id 列表
   judgeSummary    String?  // 裁判总结
   createdAt       DateTime @default(now())
 

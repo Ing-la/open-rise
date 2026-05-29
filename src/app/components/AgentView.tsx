@@ -333,7 +333,7 @@ export default function AgentView({
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 px-6">
         {/* ── Messages ── */}
         <div className="flex-1 overflow-y-auto thin-scroll pt-8 pb-4">
-          <div className="max-w-2xl mx-auto space-y-6">
+          <div className="max-w-3xl mx-auto space-y-6">
             {sessionMessages.length === 0 && !currentResult && !isRunning ? (
               compactInfo ? (
                 <div className="flex flex-col items-center justify-center pt-16 text-center px-4">
@@ -398,7 +398,7 @@ export default function AgentView({
                     return msg.role === 'user' ? (
                       <div key={msg.id} className="flex justify-end">
                         <div className="max-w-[75%]">
-                          <p className="font-mono text-sm text-[#2C2C2C] leading-relaxed whitespace-pre-wrap px-4 py-2.5 bg-paper border border-[#2C2C2C] rounded-xl">
+                          <p className="font-mono text-lg text-[#2C2C2C] leading-relaxed whitespace-pre-wrap px-4 py-2.5 bg-paper border border-[#2C2C2C] rounded-xl">
                             {msg.content}
                           </p>
                         </div>
@@ -407,12 +407,19 @@ export default function AgentView({
                       <div key={msg.id} className="flex justify-start">
                         <div className="max-w-[90%]">
                           <div className="flex items-center gap-2 mb-2">
-                            <AvatarIcon id={agentRole.avatar} size={24} />
-                            <span className="font-hand text-sm text-[#2C2C2C]">{agentRole.name}</span>
+                            <AvatarIcon id={agentRole.avatar} size={32} />
+                            <span className="font-hand text-lg text-[#2C2C2C]">{agentRole.name}</span>
+                            {isRunning && msg === displayMessages[displayMessages.length - 1] && msg.role === 'assistant' && (
+                              <span className="flex items-center gap-1 ml-1">
+                                <span className="w-2.5 h-2.5 rounded-full bg-[#FF4B4B] animate-stream-dot" style={{ animationDelay: '0ms' }} />
+                                <span className="w-2.5 h-2.5 rounded-full bg-[#FF8C42] animate-stream-dot" style={{ animationDelay: '333ms' }} />
+                                <span className="w-2.5 h-2.5 rounded-full bg-[#9B59B6] animate-stream-dot" style={{ animationDelay: '666ms' }} />
+                              </span>
+                            )}
                           </div>
-                          <div className="ml-6">
+                          <div className="ml-8">
                             {cleanText && (
-                              <div className="markdown-content">
+                              <div className="markdown-content text-lg">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                   {cleanText}
                                 </ReactMarkdown>
@@ -438,17 +445,22 @@ export default function AgentView({
               <div className="flex justify-start">
                 <div className="max-w-[90%]">
                   <div className="flex items-center gap-2 mb-2">
-                    <AvatarIcon id={agentRole.avatar} size={24} />
-                    <span className="font-hand text-sm text-[#2C2C2C]">{agentRole.name}</span>
+                    <AvatarIcon id={agentRole.avatar} size={32} />
+                    <span className="font-hand text-lg text-[#2C2C2C]">{agentRole.name}</span>
+                    <span className="flex items-center gap-1 ml-1">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#FF4B4B] animate-stream-dot" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#FF8C42] animate-stream-dot" style={{ animationDelay: '333ms' }} />
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#9B59B6] animate-stream-dot" style={{ animationDelay: '666ms' }} />
+                    </span>
                   </div>
-                  <div className="ml-6">
+                  <div className="ml-8">
                     {progress && (
                       <p className="font-mono text-xs text-[#2C2C2C]/50 animate-pulse mb-2">{progress}</p>
                     )}
                     {currentTrace.length > 0 && (
                       <div className="border-l-2 border-[#2C2C2C]/10 pl-2">
                         {currentTrace.slice(-3).map((t: any, i: number) => (
-                          <p key={i} className="font-mono text-xs text-[#2C2C2C]/40">
+                          <p key={i} className="font-mono text-sm text-[#2C2C2C]/40">
                             {t.type === 'thought' ? '🤔 思考中...' : `🛠 ${t.name}...`}
                           </p>
                         ))}
@@ -476,60 +488,64 @@ export default function AgentView({
         {/* ── Input / Stop ── */}
         <div className="pb-9 pt-1">
           <div className="max-w-3xl mx-auto">
-            {isRunning ? (
-              <div className="flex justify-center">
-                <button
-                  onClick={handleStop}
-                  className="font-mono text-sm text-[#2C2C2C]/60 hover:text-[#2C2C2C] border border-[#2C2C2C]/20 hover:border-[#2C2C2C]/50 px-6 py-2 rounded-lg transition-colors cursor-pointer"
-                >
-                  停止
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <svg
-                  className="absolute inset-0 w-full h-full pointer-events-none"
-                  viewBox="0 0 400 200"
-                  preserveAspectRatio="none"
-                  fill="none"
-                  aria-hidden="true"
-                  style={{ zIndex: 1 }}
-                >
-                  <rect x="4" y="4" width="392" height="192" rx="16" fill="#FFFFFF" />
-                  <rect x="4" y="4" width="392" height="192" rx="16" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
-                </svg>
-                {/* Suggestion overlay */}
-                {suggestion && (
-                  <div
-                    className="absolute top-0 left-0 w-full h-full pointer-events-none font-mono text-base px-5 py-3.5 overflow-hidden"
-                    style={{ lineHeight: '24px', zIndex: 2, color: 'transparent' }}
-                    aria-hidden="true"
+            <div className="relative">
+              <svg
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                viewBox="0 0 400 200"
+                preserveAspectRatio="none"
+                fill="none"
+                aria-hidden="true"
+                style={{ zIndex: 1 }}
+              >
+                <rect x="4" y="4" width="392" height="192" rx="16" fill="#FFFFFF" />
+                <rect x="4" y="4" width="392" height="192" rx="16" fill="none" stroke="#2C2C2C" strokeWidth="1.5" filter="url(#tremble)" />
+              </svg>
+
+              {isRunning ? (
+                <div className="relative flex items-center justify-between px-5 py-3.5" style={{ zIndex: 2 }}>
+                  <span className="font-mono text-base text-[#2C2C2C]/30 flex-1 text-center select-none">点击停止任务</span>
+                  <button
+                    onClick={handleStop}
+                    className="font-mono text-sm text-red-500/60 hover:text-red-500 border border-red-500/20 hover:border-red-500/50 px-4 py-1.5 rounded-lg transition-colors cursor-pointer shrink-0"
                   >
-                    <span style={{ color: 'transparent' }}>{inputValue}</span>
-                    <span className="text-[#2C2C2C]/20">{suggestion}</span>
-                  </div>
-                )}
-                <textarea
-                  ref={inputRef}
-                  value={inputValue}
-                  onChange={handleInputChange}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  placeholder={activeSessionId ? '描述任务...' : '请先新建或选择一个会话...'}
-                  disabled={!activeSessionId}
-                  className="relative w-full bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-[#2C2C2C] placeholder-[#2C2C2C]/30 caret-[#2C2C2C] resize-none overflow-y-auto thin-scroll px-5 py-3.5"
-                  style={{ lineHeight: '24px', maxHeight: '196px', zIndex: 3 }}
-                  autoComplete="off"
-                />
-                {!activeSessionId && onRequestSidebarOpen && (
-                  <div
-                    className="absolute inset-0 cursor-pointer"
-                    style={{ zIndex: 10 }}
-                    onClick={() => onRequestSidebarOpen?.()}
+                    ■ 停止
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Suggestion overlay */}
+                  {suggestion && (
+                    <div
+                      className="absolute top-0 left-0 w-full h-full pointer-events-none font-mono text-base px-5 py-3.5 overflow-hidden"
+                      style={{ lineHeight: '24px', zIndex: 2, color: 'transparent' }}
+                      aria-hidden="true"
+                    >
+                      <span style={{ color: 'transparent' }}>{inputValue}</span>
+                      <span className="text-[#2C2C2C]/20">{suggestion}</span>
+                    </div>
+                  )}
+                  <textarea
+                    ref={inputRef}
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    rows={1}
+                    placeholder={activeSessionId ? '描述任务...' : '请先新建或选择一个会话...'}
+                    disabled={!activeSessionId}
+                    className="relative w-full bg-transparent border-none focus:outline-none focus:ring-0 font-mono text-base text-[#2C2C2C] placeholder-[#2C2C2C]/30 caret-[#2C2C2C] resize-none overflow-y-auto thin-scroll px-5 py-3.5"
+                    style={{ lineHeight: '24px', maxHeight: '196px', zIndex: 3 }}
+                    autoComplete="off"
                   />
-                )}
-              </div>
-            )}
+                  {!activeSessionId && onRequestSidebarOpen && (
+                    <div
+                      className="absolute inset-0 cursor-pointer"
+                      style={{ zIndex: 10 }}
+                      onClick={() => onRequestSidebarOpen?.()}
+                    />
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

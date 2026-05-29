@@ -45,7 +45,7 @@ export default function AgentSessionList({
       <div className="px-3 pt-4 pb-2">
         <button
           onClick={onCreate}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-[#2C2C2C]/20 hover:border-[#2C2C2C]/50 text-[#2C2C2C]/50 hover:text-[#2C2C2C]/80 transition-all cursor-pointer font-hand text-sm"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-[#2C2C2C]/20 hover:border-[#2C2C2C]/50 text-[#2C2C2C]/50 hover:text-[#2C2C2C]/80 transition-all cursor-pointer font-hand text-lg"
         >
           <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none" aria-hidden="true">
             <path d="M 8 2 L 8 14 M 2 8 L 14 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" filter="url(#tremble)" />
@@ -83,7 +83,7 @@ export default function AgentSessionList({
                   onClick={() => onSelect(s.id)}
                   className="flex-1 min-w-0 text-left px-3 py-2 cursor-pointer"
                 >
-                  <p className="font-hand text-sm text-[#2C2C2C] truncate">{s.title || '新会话'}</p>
+                  <p className="font-hand text-lg text-[#2C2C2C] truncate">{s.title || '新会话'}</p>
                   <p className="font-mono text-[10px] text-[#2C2C2C]/30">
                     {new Date(s.createdAt).toLocaleDateString()}
                   </p>
