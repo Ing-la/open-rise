@@ -37,7 +37,11 @@ module.exports = function (ipcMain) {
   });
 
   ipcMain.handle('role:delete', async (_event, id) => {
+    // Delete agent sessions (cascades to AgentMessage via schema)
+    await prisma.agentSession.deleteMany({ where: { roleId: id } });
+    // Delete chat messages
     await prisma.message.deleteMany({ where: { roleId: id } });
+    // Delete the role
     await prisma.role.delete({ where: { id } });
     return { success: true };
   });

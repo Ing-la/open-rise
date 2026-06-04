@@ -9,11 +9,11 @@ const prisma = new PrismaClient();
 //  Round definitions
 // ═══════════════════════════════════════════════════════════════
 const ROUNDS = [
-  { phase: 'opening',  label: '立论',     budget: 700, maxTokens: 4096, speakerList: [{ side: 'pro', pos: 1 }, { side: 'con', pos: 1 }] },
-  { phase: 'rebuttal', label: '驳论',    budget: 400, maxTokens: 4096, speakerList: [{ side: 'con', pos: 2 }, { side: 'pro', pos: 2 }] },
+  { phase: 'opening',  label: '立论',     budget: 500, maxTokens: 4096, speakerList: [{ side: 'pro', pos: 1 }, { side: 'con', pos: 1 }] },
+  { phase: 'rebuttal', label: '驳论',    budget: 300, maxTokens: 4096, speakerList: [{ side: 'con', pos: 2 }, { side: 'pro', pos: 2 }] },
   { phase: 'cross',    label: '对辩',      budget: 300, maxTokens: null, speakers: 'cross', speakerPositions: [{ side: 'pro', pos: 3 }, { side: 'con', pos: 3 }] },
   { phase: 'free',     label: '自由辩论',   budget: 800, maxTokens: null, speakers: 'free' },
-  { phase: 'closing',  label: '总结',     budget: 700, maxTokens: 4096, speakerList: [{ side: 'con', pos: 4 }, { side: 'pro', pos: 4 }] },
+  { phase: 'closing',  label: '总结',     budget: 500, maxTokens: 4096, speakerList: [{ side: 'con', pos: 4 }, { side: 'pro', pos: 4 }] },
 ];
 
 const POSITION_NAMES = ['', '一辩', '二辩', '三辩', '四辩'];
@@ -23,18 +23,18 @@ const POSITION_NAMES = ['', '一辩', '二辩', '三辩', '四辩'];
 // ═══════════════════════════════════════════════════════════════
 const PHASE_PROMPTS = {
   opening: {
-    pro: '现在是你方立论环节。作为正方开篇，为本场辩论定下基调。篇幅建议 600~700 字之间。',
-    con: '现在是你方立论环节。作为反方开篇，建立本方论证框架。此时无需深入反驳正方一辩的发言，驳论环节会专门处理。篇幅建议 600~700 字之间。',
+    pro: '现在是你方立论环节。作为正方开篇，为本场辩论定下基调。篇幅建议 400~500 字之间。',
+    con: '现在是你方立论环节。作为反方开篇，建立本方论证框架。此时无需深入反驳正方一辩的发言，驳论环节会专门处理。篇幅建议 400~500 字之间。',
   },
   rebuttal: {
-    con: '现在是驳论环节，你的任务是反驳正方立论、加固本方立场。篇幅建议 300~400 字之间。',
-    pro: '现在是驳论环节，你的任务是反驳反方立论、修复和巩固本方立场。篇幅建议 300~400 字之间。',
+    con: '现在是驳论环节，你的任务是反驳正方立论、加固本方立场。篇幅建议 200~300 字之间。',
+    pro: '现在是驳论环节，你的任务是反驳反方立论、修复和巩固本方立场。篇幅建议 200~300 字之间。',
   },
-  cross: '现在进入对辩环节，你和对方三辩多轮交替发言。留意上方的字数配额——你方还剩多少、对方还剩多少，都是重要信息。建议单次控制在 30~80 字以内，一句有力的质问或回应往往比长篇大论更有效，但不强制。\n如果你方字数用完，本轮失去发言权；如果对方字数先用完，你方依然可以继续输出直到自己也耗尽——可以一次打完所有剩余字数，也可以继续保持多轮短促输出。',
-  free: '现在是自由辩论环节，双方交替发言，节奏紧凑。每次随机选派一名辩手出场，现在轮到你。\n\n留意上方的字数配额——你方还剩多少、对方还剩多少，都是重要信息。建议单次控制在 30~80 字以内，一句有力的质问或回应往往比长篇大论更有效，但不强制。\n如果你方字数用完，本轮失去发言权；如果对方字数先用完，你方依然可以继续输出直到自己也耗尽——可以一次打完所有剩余字数，也可以继续保持多轮短促输出。',
+  cross: '现在进入对辩环节，你和对方三辩多轮交替发言。留意上方的字数配额——你方还剩多少、对方还剩多少，都是重要信息。\n如果你方字数用完，本轮失去发言权；如果对方字数先用完，你方依然可以继续输出直到自己也耗尽——可以一次打完所有剩余字数，也可以继续保持多轮短促输出。',
+  free: '现在是自由辩论环节，双方交替发言，节奏紧凑。每次随机选派一名辩手出场，现在轮到你。\n\n留意上方的字数配额——你方还剩多少、对方还剩多少，都是重要信息。\n如果你方字数用完，本轮失去发言权；如果对方字数先用完，你方依然可以继续输出直到自己也耗尽——可以一次打完所有剩余字数，也可以继续保持多轮短促输出。',
   closing: {
-    con: '现在是总结陈词环节，你是反方收尾。回顾全场，指出正方始终未能解决的问题，升华本方立场。篇幅建议 600~700 字之间。',
-    pro: '现在是总结陈词环节，你是正方收尾。回顾全场，指出反方始终未能有效回击的核心论点，升华本方立场。篇幅建议 600~700 字之间。',
+    con: '现在是总结陈词环节，你是反方收尾。回顾全场，指出正方始终未能解决的问题，升华本方立场。篇幅建议 400~500 字之间。',
+    pro: '现在是总结陈词环节，你是正方收尾。回顾全场，指出反方始终未能有效回击的核心论点，升华本方立场。篇幅建议 400~500 字之间。',
   },
 };
 
@@ -156,7 +156,7 @@ function buildUserMessage(allMsgs, roundPhase, mySide, myUsed, myBudget, oppUsed
 //  SSE streaming LLM call
 // ═══════════════════════════════════════════════════════════════
 
-async function streamSpeech(brain, messages, maxTokens, onDelta, onDone) {
+async function streamSpeech(brain, messages, maxTokens, onDelta, onDone, debugLabel) {
   const body = {
     model: brain.modelName,
     messages,
@@ -164,7 +164,10 @@ async function streamSpeech(brain, messages, maxTokens, onDelta, onDone) {
   };
   if (maxTokens) body.max_tokens = maxTokens;
 
-  const response = await fetch(`${brain.baseUrl}/chat/completions`, {
+  const url = `${brain.baseUrl}/chat/completions`;
+  if (debugLabel) console.log(`[streamSpeech:${debugLabel}] POST`, url, 'body.model:', body.model, 'max_tokens:', body.max_tokens);
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -175,14 +178,18 @@ async function streamSpeech(brain, messages, maxTokens, onDelta, onDone) {
 
   if (!response.ok) {
     const err = await response.text();
+    if (debugLabel) console.log(`[streamSpeech:${debugLabel}] HTTP ${response.status}:`, err.slice(0, 200));
     throw new Error(`API error ${response.status}: ${err}`);
   }
+
+  if (debugLabel) console.log(`[streamSpeech:${debugLabel}] HTTP ${response.status} OK, reading stream...`);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
   let full = '';
   let totalTokens = 0;
+  let lineCount = 0;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -198,6 +205,8 @@ async function streamSpeech(brain, messages, maxTokens, onDelta, onDone) {
       const data = trimmed.slice(6);
       if (data === '[DONE]') continue;
 
+      lineCount++;
+
       try {
         const json = JSON.parse(data);
         const delta = json.choices?.[0]?.delta?.content || '';
@@ -212,6 +221,7 @@ async function streamSpeech(brain, messages, maxTokens, onDelta, onDone) {
     }
   }
 
+  if (debugLabel) console.log(`[streamSpeech:${debugLabel}] stream ended, lines:${lineCount} full.length:${full.length}`);
   if (!totalTokens) totalTokens = Math.ceil(full.length * 0.35) || 1;
   onDone(full, totalTokens);
 }
@@ -319,14 +329,9 @@ async function executeSpeech(event, state, speaker) {
   const oppUsed = state.perSideChars[opp];
 
   const sys = buildSystemPrompt(role, side, pos, state.proTopic, state.conTopic, state.background, phase);
-  const usr = buildUserMessage(state.allMsgs, phase, side, myUsed, budget, oppUsed, budget, ++state.roundIdx, state.proTopic, state.conTopic);
+  let usr = buildUserMessage(state.allMsgs, phase, side, myUsed, budget, oppUsed, budget, ++state.roundIdx, state.proTopic, state.conTopic);
 
-  // Debug mode: send prompt
-  if (state.debugMode) {
-    event.sender.send('debate:prompt', { system: sys, user: usr });
-  }
-
-  // Send first delta with speaker info to create speech entry
+  // Send first delta immediately so frontend shows speech bubble & animation
   event.sender.send('debate:delta', {
     roleId: role.id,
     roleName: role.name,
@@ -337,13 +342,64 @@ async function executeSpeech(event, state, speaker) {
     isFirst: true,
   });
 
+  // ── Two-step tactical analysis for cross/free debate ──
+  const isCrossFree = (phase === 'cross' || phase === 'free');
+  let tacticSys, tacticUser;
+  if (isCrossFree) {
+    const sideName = side === 'pro' ? '正方' : '反方';
+    const posName = POSITION_NAMES[pos] || '';
+    const myTopic = side === 'pro' ? state.proTopic : state.conTopic;
+
+    tacticSys = `你是辩论赛的${sideName}${posName}，你的立场是：${sideName} —— ${myTopic}\n你的目标是赢下这场比赛。分析当前局势，为你的下一轮发言制定策略。`;
+
+    let historyText = '';
+    for (const m of state.allMsgs) {
+      const s = m.side === 'pro' ? '正方' : m.side === 'con' ? '反方' : '裁判';
+      const p = m.position > 0 ? POSITION_NAMES[m.position] : '';
+      historyText += `[${s}${p}]：${m.content}\n`;
+    }
+
+    tacticUser = `辩题：正方「${state.proTopic}」vs 反方「${state.conTopic}」\n以下是截至目前本场辩论的全部记录：\n---\n${historyText}---\n\n当前环节：${label}\n双方字数：我方 ${myUsed}/${budget}，对方 ${oppUsed}/${budget}\n\n评估以下维度：\n1. 致命漏洞：对方尚未被有效反驳的逻辑漏洞或事实错误\n2. 防守回应：对方正在攻击我方且尚未有效回应的点\n3. 新攻击角度：尚未展开、但能有力支撑己方立场的新角度\n\n输出两项内容：\n\n策略一：从 1~3 中选当前最重要的一个方向，一句话说明。\n新角度参考（用于后续轮次）：基于维度 3，给一个尚未使用的新攻击角度作为种子。`;
+
+    let analysisText = '';
+    await streamSpeech(role.brain, [
+      { role: 'system', content: tacticSys },
+      { role: 'user', content: tacticUser },
+    ], 4096,
+      () => {},
+      (c) => { analysisText = c; },
+      'tactic'
+    );
+
+    if (analysisText.trim()) {
+      const injectPoint = usr.lastIndexOf('轮到你发言了');
+      if (injectPoint !== -1) {
+        usr = usr.slice(0, injectPoint) + `战术分析：\n${analysisText.trim()}\n\n` + usr.slice(injectPoint);
+        console.log('[tactic] injection done, usr length:', usr.length);
+      }
+    } else {
+      console.log('[tactic] analysis text empty, skipping injection');
+    }
+  }
+
+  // Debug mode: send both tactical and final prompts
+  if (state.debugMode) {
+    event.sender.send('debate:prompt', {
+      system: sys,
+      user: usr,
+      tacticSystem: isCrossFree ? tacticSys : undefined,
+      tacticUser: isCrossFree ? tacticUser : undefined,
+    });
+  }
+
   let speech = '', tokens = 0;
   await streamSpeech(role.brain, [
     { role: 'system', content: sys },
     { role: 'user', content: usr },
   ], 4096,
     (d) => event.sender.send('debate:delta', { roleId: role.id, content: d, isFirst: false }),
-    (c, t) => { speech = c; tokens = t; }
+    (c, t) => { speech = c; tokens = t; },
+    'main'
   );
 
   // Update state
@@ -425,7 +481,8 @@ async function executeJudgingPhase1(event, state) {
       { role: 'user', content: usr },
     ], 8192,
       () => {},
-      (c, t) => { text = c; tokens = t; }
+      (c, t) => { text = c; tokens = t; },
+      'judge'
     );
 
     if (!text.trim()) throw new Error(`裁判 ${persona.name} 输出为空`);

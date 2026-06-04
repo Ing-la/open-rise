@@ -248,6 +248,11 @@ module.exports = function (ipcMain) {
     return messages;
   });
 
+  ipcMain.handle('chat:clear', async (_event, roleId) => {
+    await prisma.message.deleteMany({ where: { roleId } });
+    return { success: true };
+  });
+
   ipcMain.on('chat:send-stream', async (event, params) => {
     const { roleId, content } = params;
 

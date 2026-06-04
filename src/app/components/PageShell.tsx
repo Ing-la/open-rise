@@ -1,31 +1,32 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { listRoles, listAgentSessions, createAgentSession, deleteAgentSession, renameAgentSession } from '@/lib/api';
+import { listRoles, listAgentSessions, createAgentSession, deleteAgentSession, renameAgentSession, clearMessages } from '@/lib/api';
 import { AvatarIcon } from './AvatarIcon';
 import CommandCenter from './CommandCenter';
 import ChatView from './ChatView';
 import AgentView from './AgentView';
 import AgentSessionList from './AgentSessionList';
-import BrainModal from './BrainModal';
-import RoleModal from './RoleModal';
+import BrainLibrary from './BrainLibrary';
+import RoleLibrary from './RoleLibrary';
+import ConfirmDialog from './ConfirmDialog';
 import AgentCapabilitiesModal from './AgentCapabilitiesModal';
 import DebateView from './DebateView';
 
 const SIDEBAR_W = 256;
 
 export default function PageShell() {
-  const [mode, setMode] = useState<'home' | 'chat' | 'agent' | 'debate'>('home');
+  const [mode, setMode] = useState<'home' | 'chat' | 'agent' | 'debate' | 'brain-library' | 'role-library'>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<any | null>(null);
   const [agentRole, setAgentRole] = useState<any | null>(null);
   const [individuals, setIndividuals] = useState<any[]>([]);
   const [agentSessions, setAgentSessions] = useState<any[]>([]);
   const [agentActiveSessionId, setAgentActiveSessionId] = useState<string | null>(null);
-  const [brainOpen, setBrainOpen] = useState(false);
-  const [roleOpen, setRoleOpen] = useState(false);
   const [capabilitiesModalOpen, setCapabilitiesModalOpen] = useState(false);
   const [debatePhaseInfo, setDebatePhaseInfo] = useState<{ currentPhase: string; roundIndex: number }>({ currentPhase: '', roundIndex: 0 });
+  const [clearTarget, setClearTarget] = useState<any | null>(null);
+  const [sessionDeleteTarget, setSessionDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
     listRoles().then(setIndividuals).catch(() => {});
@@ -55,15 +56,23 @@ export default function PageShell() {
     }
   }, [agentRole]);
 
-  const handleAgentDeleteSession = useCallback(async (sessionId: string) => {
+  const handleAgentDeleteSession = useCallback((sessionId: string) => {
+    setSessionDeleteTarget(sessionId);
+  }, []);
+
+  const confirmDeleteSession = useCallback(async () => {
+    const sessionId = sessionDeleteTarget;
+    if (!sessionId) return;
     try {
       await deleteAgentSession(sessionId);
       setAgentSessions((prev) => prev.filter((s) => s.id !== sessionId));
       setAgentActiveSessionId((prev) => prev === sessionId ? null : prev);
     } catch {
       // silently fail
+    } finally {
+      setSessionDeleteTarget(null);
     }
-  }, []);
+  }, [sessionDeleteTarget]);
 
   const handleAgentRenameSession = useCallback(async (sessionId: string, title: string) => {
     try {
@@ -111,6 +120,16 @@ export default function PageShell() {
     setSidebarOpen(false);
   }, []);
 
+  const enterBrainLibrary = useCallback(() => {
+    setMode('brain-library');
+    setSidebarOpen(false);
+  }, []);
+
+  const enterRoleLibrary = useCallback(() => {
+    setMode('role-library');
+    setSidebarOpen(false);
+  }, []);
+
   const toggleSidebar = useCallback(() => {
     const next = !sidebarOpen;
     if (next) listRoles().then(setIndividuals).catch(() => {});
@@ -121,6 +140,19 @@ export default function PageShell() {
     setAgentRole(role);
   }, []);
 
+  const handleClearMessages = useCallback(async (person: any) => {
+    setClearTarget(person);
+  }, []);
+
+  const confirmClearMessages = useCallback(async () => {
+    if (!clearTarget) return;
+    await clearMessages(clearTarget.id);
+    if (selectedPerson?.id === clearTarget.id) {
+      setSelectedPerson({ ...clearTarget });
+    }
+    setClearTarget(null);
+  }, [clearTarget, selectedPerson]);
+
   return (
     <div className="h-screen flex bg-[#F2F2EE] overflow-hidden relative">
       {/* ════════════════════════════════════════════
@@ -128,7 +160,7 @@ export default function PageShell() {
           ════════════════════════════════════════════ */}
       <div className="fixed top-0 left-0 right-0 z-50 h-12 flex items-center px-10">
         {/* ── ≡ (hidden in debate) ── */}
-        {mode !== 'debate' && (
+        {mode !== 'debate' && mode !== 'brain-library' && mode !== 'role-library' && (
         <button
           onClick={toggleSidebar}
           className="w-8 h-8 flex items-center justify-center cursor-pointer focus:outline-none"
@@ -219,23 +251,27 @@ export default function PageShell() {
       {mode !== 'debate' && (
       <div
         className={`overflow-hidden transition-all duration-200 ease-out ${
-          mode === 'home' ? 'absolute left-0 top-0 bottom-0 z-40' : 'h-full shrink-0'
+          mode === 'home' || mode === 'brain-library' || mode === 'role-library' ? 'absolute left-0 top-0 bottom-0 z-40' : 'h-full shrink-0'
         }`}
         style={{ width: sidebarOpen ? SIDEBAR_W : 0 }}
       >
         <div className="w-64 h-full flex flex-col pt-20" style={{ width: SIDEBAR_W }}>
           <div className="flex-1 overflow-y-auto thin-scroll px-3 pb-4">
-            {mode === 'home' ? (
+            {mode === 'home' || mode === 'brain-library' || mode === 'role-library' ? (
               <div className="space-y-0.5 pt-2">
                 <button
-                  onClick={() => setBrainOpen(true)}
-                  className="w-full flex items-center gap-3 px-2.5 py-3 rounded-lg font-hand text-lg font-bold text-[#2C2C2C]/60 hover:text-[#2C2C2C] hover:bg-[#2C2C2C]/5 transition-colors cursor-pointer text-left"
+                  onClick={enterBrainLibrary}
+                  className={`w-full flex items-center gap-3 px-2.5 py-3 rounded-lg font-hand text-lg font-bold transition-colors cursor-pointer text-left ${
+                    mode === 'brain-library' ? 'text-[#2C2C2C] bg-[#2C2C2C]/8' : 'text-[#2C2C2C]/60 hover:text-[#2C2C2C] hover:bg-[#2C2C2C]/5'
+                  }`}
                 >
                   brain
                 </button>
                 <button
-                  onClick={() => setRoleOpen(true)}
-                  className="w-full flex items-center gap-3 px-2.5 py-3 rounded-lg font-hand text-lg font-bold text-[#2C2C2C]/60 hover:text-[#2C2C2C] hover:bg-[#2C2C2C]/5 transition-colors cursor-pointer text-left"
+                  onClick={enterRoleLibrary}
+                  className={`w-full flex items-center gap-3 px-2.5 py-3 rounded-lg font-hand text-lg font-bold transition-colors cursor-pointer text-left ${
+                    mode === 'role-library' ? 'text-[#2C2C2C] bg-[#2C2C2C]/8' : 'text-[#2C2C2C]/60 hover:text-[#2C2C2C] hover:bg-[#2C2C2C]/5'
+                  }`}
                 >
                   role
                 </button>
@@ -264,19 +300,31 @@ export default function PageShell() {
               ) : (
                 <div className="space-y-1">
                   {individuals.map((ind) => (
-                    <button
-                      key={ind.id}
-                      onClick={() => handleSelectPerson(ind)}
-                      className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition-colors cursor-pointer text-left ${
-                        selectedPerson?.id === ind.id ? 'bg-[#2C2C2C]/8' : 'hover:bg-[#2C2C2C]/5'
-                      }`}
-                    >
-                      <AvatarIcon id={ind.avatar} size={32} />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-hand text-lg text-[#2C2C2C] truncate">{ind.name}</p>
-                        <p className="font-mono text-[10px] text-[#2C2C2C]/40 truncate">{ind.brainName}</p>
-                      </div>
-                    </button>
+                    <div key={ind.id} className="group flex items-center">
+                      <button
+                        onClick={() => handleSelectPerson(ind)}
+                        className={`flex-1 flex items-center gap-3 p-2.5 rounded-lg transition-colors cursor-pointer text-left ${
+                          selectedPerson?.id === ind.id ? 'bg-[#2C2C2C]/8' : 'hover:bg-[#2C2C2C]/5'
+                        }`}
+                      >
+                        <AvatarIcon id={ind.avatar} size={32} />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-hand text-lg text-[#2C2C2C] truncate">{ind.name}</p>
+                          <p className="font-mono text-[10px] text-[#2C2C2C]/40 truncate">{ind.brainName}</p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => handleClearMessages(ind)}
+                        className="shrink-0 mr-1.5 w-7 h-7 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#2C2C2C]/10 transition-all cursor-pointer"
+                        aria-label={`清除 ${ind.name} 聊天记录`}
+                        type="button"
+                      >
+                        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" aria-hidden="true">
+                          <path d="M 2 4 L 14 4 M 5 4 L 5 2 C 5 1.5 5.5 1 6 1 L 10 1 C 10.5 1 11 1.5 11 2 L 11 4 M 12.5 4 L 12 13 C 12 13.5 11.5 14 11 14 L 5 14 C 4.5 14 4 13.5 4 13 L 3.5 4" stroke="#2C2C2C" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M 6.5 7 L 6.5 11 M 9.5 7 L 9.5 11" stroke="#2C2C2C" strokeWidth="1.2" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )
@@ -320,7 +368,7 @@ export default function PageShell() {
               <h1 className="absolute inset-0 text-[160px] sm:text-[220px] font-hand text-[#2C2C2C]/15 leading-none text-center" style={{ transform: 'rotate(0.5deg) translate(3px, -2px)', filter: 'url(#charcoal)' }} aria-hidden="true">OpenRise</h1>
               <h1 className="relative text-[160px] sm:text-[220px] font-hand text-[#2C2C2C] leading-none text-center wiggle-subtle" style={{ filter: 'url(#charcoal)' }}>OpenRise</h1>
             </div>
-            <CommandCenter onChatStart={enterChat} onAgentStart={enterAgent} onBrainOpen={() => setBrainOpen(true)} onRoleOpen={() => setRoleOpen(true)} onDebateStart={enterDebate} />
+            <CommandCenter onChatStart={enterChat} onAgentStart={enterAgent} onBrainOpen={enterBrainLibrary} onRoleOpen={enterRoleLibrary} onDebateStart={enterDebate} />
           </main>
         )}
 
@@ -353,6 +401,16 @@ export default function PageShell() {
             onRequestSidebarOpen={toggleSidebar}
           />
         )}
+
+        {/* ─── Brain Library ─── */}
+        {mode === 'brain-library' && (
+          <BrainLibrary onBack={exitToHome} />
+        )}
+
+        {/* ─── Role Library ─── */}
+        {mode === 'role-library' && (
+          <RoleLibrary onBack={exitToHome} />
+        )}
       </div>
 
       {/* ── Agent capabilities modal ── */}
@@ -363,9 +421,25 @@ export default function PageShell() {
         agentRoleName={agentRole?.name || ''}
       />
 
-      {/* ── Brain / Role modals ── */}
-      <BrainModal isOpen={brainOpen} onClose={() => setBrainOpen(false)} />
-      <RoleModal isOpen={roleOpen} onClose={() => setRoleOpen(false)} />
+      {/* ── Clear messages confirm ── */}
+      <ConfirmDialog
+        open={!!clearTarget}
+        title="清除聊天记录"
+        message={`确认清除 ${clearTarget?.name || ''} 的聊天记录？\n此操作不可撤销。`}
+        confirmText="清除"
+        onConfirm={confirmClearMessages}
+        onCancel={() => setClearTarget(null)}
+      />
+
+      {/* ── Delete session confirm ── */}
+      <ConfirmDialog
+        open={!!sessionDeleteTarget}
+        title="删除会话"
+        message={`确认删除会话「${agentSessions.find(s => s.id === sessionDeleteTarget)?.title || ''}」？\n此操作不可撤销。`}
+        confirmText="删除"
+        onConfirm={confirmDeleteSession}
+        onCancel={() => setSessionDeleteTarget(null)}
+      />
     </div>
   );
 }

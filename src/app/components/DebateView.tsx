@@ -182,7 +182,11 @@ function SpeechBubble({ speech }: { speech: SpeechEntry }) {
   );
 }
 
-function PromptModal({ system, user, onClose }: { system: string; user: string; onClose: () => void }) {
+function PromptModal({ system, user, tacticSystem, tacticUser, onClose }: {
+  system: string; user: string; tacticSystem?: string; tacticUser?: string; onClose: () => void;
+}) {
+  const [tacticOpen, setTacticOpen] = useState(false);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
@@ -197,6 +201,29 @@ function PromptModal({ system, user, onClose }: { system: string; user: string; 
           <button onClick={onClose} className="font-mono text-sm text-[#2C2C2C]/40 hover:text-[#2C2C2C]/70 cursor-pointer">✕ 关闭</button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4 thin-scroll">
+          {tacticSystem && tacticUser && (
+            <div className="border border-[#2C2C2C]/15 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setTacticOpen(!tacticOpen)}
+                className="w-full flex items-center justify-between px-4 py-2 bg-[#F2F2EE] hover:bg-[#2C2C2C]/5 transition-colors cursor-pointer text-left"
+              >
+                <span className="font-hand text-sm text-[#2C2C2C]/70">战术分析 Prompt（预调用）</span>
+                <span className={`transform transition-transform duration-200 ${tacticOpen ? 'rotate-180' : ''} text-[#2C2C2C]/40`}>▾</span>
+              </button>
+              {tacticOpen && (
+                <div className="p-4 space-y-3">
+                  <div>
+                    <p className="font-hand text-xs text-[#2C2C2C]/50 mb-1">System Prompt</p>
+                    <pre className="font-mono text-sm text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{tacticSystem}</pre>
+                  </div>
+                  <div>
+                    <p className="font-hand text-xs text-[#2C2C2C]/50 mb-1">User Message</p>
+                    <pre className="font-mono text-sm text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{tacticUser}</pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <p className="font-hand text-sm text-[#2C2C2C]/60 mb-1">System Prompt</p>
             <pre className="font-mono text-sm text-[#2C2C2C]/80 bg-[#F2F2EE] p-3 rounded-lg whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">{system}</pre>
@@ -230,7 +257,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
   const [winner, setWinner] = useState<'pro' | 'con' | null>(null);
   const [isStepping, setIsStepping] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
-  const [latestPrompt, setLatestPrompt] = useState<{ system: string; user: string } | null>(null);
+  const [latestPrompt, setLatestPrompt] = useState<{ system: string; user: string; tacticSystem?: string; tacticUser?: string } | null>(null);
   const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [debateList, setDebateList] = useState<any[]>([]);
   const [judgingPhase2Ready, setJudgingPhase2Ready] = useState(false);
@@ -944,7 +971,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
 
       {/* ── Prompt modal (debug mode) ── */}
       {promptModalOpen && latestPrompt && (
-        <PromptModal system={latestPrompt.system} user={latestPrompt.user} onClose={() => setPromptModalOpen(false)} />
+        <PromptModal system={latestPrompt.system} user={latestPrompt.user} tacticSystem={latestPrompt.tacticSystem} tacticUser={latestPrompt.tacticUser} onClose={() => setPromptModalOpen(false)} />
       )}
     </div>
   );

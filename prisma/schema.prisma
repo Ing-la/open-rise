@@ -28,8 +28,8 @@ model Role {
   rule      String
   summary   String?   // LLM 压缩后的历史对话摘要，始终拼入 system prompt
   avatar    String?
-  brain     Brain     @relation(fields: [brainId], references: [id])
-  brainId   String
+  brain     Brain?    @relation(fields: [brainId], references: [id])
+  brainId   String?
   messages  Message[]
   createdAt DateTime  @default(now())
 

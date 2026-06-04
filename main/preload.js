@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('openriseAPI', {
       return () => ipcRenderer.removeListener('chat:error', handler);
     },
     list: (roleId) => ipcRenderer.invoke('chat:list', roleId),
+    clearMessages: (roleId) => ipcRenderer.invoke('chat:clear', roleId),
   },
   // ── Agent ──
   agent: {

@@ -25,6 +25,7 @@ interface OpenRiseAPI {
     onDone(cb: () => void): () => void;
     onError(cb: (data: { error: string }) => void): () => void;
     list(roleId: string): Promise<any[]>;
+    clearMessages(roleId: string): Promise<{ success: boolean }>;
   };
   debate: {
     create(params: { proTopic: string; conTopic: string; background: string; proRoles: string[]; conRoles: string[]; judgeBrainId: string; debugMode?: boolean }): Promise<{ debateId: string }>;
@@ -132,6 +133,9 @@ export const saveImage = (appImgUrl: string) =>
 
 export const listMessages = (roleId: string) =>
   isElectron ? api!.chat.list(roleId) : Promise.resolve([]);
+
+export const clearMessages = (roleId: string) =>
+  isElectron ? api!.chat.clearMessages(roleId) : Promise.resolve({ success: false });
 
 // ── Agent: Session 管理 ──
 

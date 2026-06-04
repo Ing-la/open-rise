@@ -31,6 +31,7 @@ const IPC = {
   // ── 对话 (Chat) ─────────────────────────────────────────
   CHAT: {
     LIST:       { channel: 'chat:list',        params: { roleId: '' }, returns: { messages: [] } },
+    CLEAR:      { channel: 'chat:clear',       params: { roleId: '' }, returns: { success: true } },
     SEND_STREAM:{ channel: 'chat:send-stream',  params: { roleId: '', content: '' }, note: 'ipcMain.on → 通过 chat:chunk/done/error 推送' },
     CHUNK:      { channel: 'chat:chunk',        note: '推送: { content: string }' },
     DONE:       { channel: 'chat:done',         note: '推送: { roleId: string }' },
@@ -114,6 +115,7 @@ const PRELOAD_API = {
     onDone:  'chat:done',
     onError: 'chat:error',
     list: 'chat:list',
+    clearMessages: 'chat:clear',
   },
   debate: {
     create: 'debate:create',

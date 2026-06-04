@@ -15,10 +15,8 @@ module.exports = function (ipcMain) {
   });
 
   ipcMain.handle('brain:delete', async (_event, id) => {
-    const roles = await prisma.role.findMany({ where: { brainId: id }, select: { id: true } });
-    const roleIds = roles.map((r) => r.id);
-    await prisma.message.deleteMany({ where: { roleId: { in: roleIds } } });
-    await prisma.role.deleteMany({ where: { brainId: id } });
+    // Detach all roles that reference this brain (keep roles, keep messages)
+    await prisma.role.updateMany({ where: { brainId: id }, data: { brainId: null } });
     await prisma.brain.delete({ where: { id } });
     return { success: true };
   });
