@@ -25,6 +25,7 @@ export default function PageShell() {
   const [agentActiveSessionId, setAgentActiveSessionId] = useState<string | null>(null);
   const [capabilitiesModalOpen, setCapabilitiesModalOpen] = useState(false);
   const [debatePhaseInfo, setDebatePhaseInfo] = useState<{ currentPhase: string; roundIndex: number }>({ currentPhase: '', roundIndex: 0 });
+  const [debateResetKey, setDebateResetKey] = useState(0);
   const [clearTarget, setClearTarget] = useState<any | null>(null);
   const [sessionDeleteTarget, setSessionDeleteTarget] = useState<string | null>(null);
 
@@ -204,7 +205,16 @@ export default function PageShell() {
         {/* ── Debate mode ── */}
         {mode === 'debate' && (
           <>
-            {/* Left: phase status */}
+            {/* Left: back button (history view) + phase status (active) */}
+            <button
+              onClick={() => setDebateResetKey(k => k + 1)}
+              className="w-8 h-8 flex items-center justify-center cursor-pointer focus:outline-none mr-3"
+              aria-label="返回辩论首页"
+            >
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+            </button>
             {debatePhaseInfo.currentPhase && (
               <div className="flex items-center gap-3 max-w-[50%] overflow-hidden">
                 {['立论', '驳论', '对辩', '自由辩论', '总结', '裁判评判'].map((p, i) => {
@@ -384,7 +394,7 @@ export default function PageShell() {
 
         {/* ─── Debate ─── */}
         {mode === 'debate' && (
-          <DebateView onPhaseInfo={setDebatePhaseInfo} />
+          <DebateView key={debateResetKey} onPhaseInfo={setDebatePhaseInfo} />
         )}
 
         {/* ─── Agent ─── */}

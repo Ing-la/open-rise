@@ -262,6 +262,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
   const [debateList, setDebateList] = useState<any[]>([]);
   const [judgingPhase2Ready, setJudgingPhase2Ready] = useState(false);
   const [judgingTotal, setJudgingTotal] = useState(0);
+  const [judgingIndex, setJudgingIndex] = useState(-1);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [debateError, setDebateError] = useState<string | null>(null);
   const [debateResult, setDebateResult] = useState<{ proTotal: number; conTotal: number; bestPro?: number; bestCon?: number; overallBest?: number } | null>(null);
@@ -442,8 +443,12 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           setConDebaters(prev => prev.map(markDone));
           setCurrentSpeakerId(null);
 
-          // Enable step button (skip judging — judging_done handles it)
-          if (data.phase !== 'judging') setIsStepping(false);
+          // Track judging index
+          if (data.phase === 'judging') {
+            setJudgingIndex(data.personaIndex ?? 0);
+          }
+          // Enable step button
+          setIsStepping(false);
         },
         onJudgingDone: (data) => {
           setJudgingPhase2Ready(true);
@@ -521,6 +526,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
     setIsStepping(false);
     setJudgingPhase2Ready(false);
     setJudgingTotal(0);
+    setJudgingIndex(-1);
     setDebateError(null);
     setDebateResult(null);
   }, []);
@@ -571,7 +577,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
           sidePhaseChars[s] += (m.charCount || m.content.length || 0);
         }
         return {
-          roleId: m.roleId, roleName: nameMap.get(m.roleId) || '', avatar: avatarMap.get(m.roleId),
+          roleId: m.roleId, roleName: m.side === 'judge' ? (m.content.match(/\*\*(.+?)\*\*/)?.[1] || '裁判评判') : (nameMap.get(m.roleId) || ''), avatar: avatarMap.get(m.roleId),
           side: m.side as SpeechEntry['side'],
           position: m.side === 'judge' ? '裁判' : posNames[m.position] || '',
           phase: phaseMap[m.round] || m.round,
@@ -655,7 +661,10 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
             setProDebaters(prev => prev.map(markDone));
             setConDebaters(prev => prev.map(markDone));
             setCurrentSpeakerId(null);
-            if (data.phase !== 'judging') setIsStepping(false);
+            if (data.phase === 'judging') {
+              setJudgingIndex(data.personaIndex ?? 0);
+            }
+            setIsStepping(false);
           },
           onJudgingDone: (data) => {
             setJudgingPhase2Ready(true);
@@ -877,7 +886,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
               disabled={isStepping}
               className="px-6 py-2 rounded-lg bg-[#2C2C2C] text-[#F2F2EE] font-hand text-base hover:bg-[#2C2C2C]/90 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
             >
-              {isStepping ? '发言中...' : judgingPhase2Ready ? '查看结果' : currentPhaseIndex >= PHASE_ORDER.length - 1 ? '裁判评判' : '下一步 →'}
+              {isStepping ? '发言中...' : judgingPhase2Ready ? '查看结果' : (judgingIndex >= 0 || currentPhaseIndex < PHASE_ORDER.length - 1) ? '下一步 →' : '裁判评判'}
             </button>
             <span className="font-mono text-xs text-[#2C2C2C]/30">
               {judgingPhase2Ready ? `${judgingTotal} 位裁判已全部完成` : `${currentPhase} · 第 ${roundIndex} 轮发言`}

@@ -59,12 +59,6 @@ const JUDGE_PERSONAS = [
     promptSoul: '你以包容态度评分，关注辩论的整体质量和建设性对话，不因个别激进言论而偏颇。' },
 ];
 
-function buildJudgeSystemPrompt(persona) {
-  return `你是本场辩论赛的裁判，${persona.name}。
-
-${persona.promptSoul}`;
-}
-
 const JUDGE_SCORING_RULES = `评分维度（满分 10 分，整数）：
 - 内容与论据（content）：论据充分度、事实准确性
 - 逻辑与推理（logic）：论证严密性、逻辑自洽性
@@ -83,6 +77,12 @@ const JUDGE_SCORING_RULES = `评分维度（满分 10 分，整数）：
   { "side": "pro/con", "position": 1-4, "content": 0-10, "logic": 0-10, "expression": 0-10, "rebuttal": 0-10, "comment": "约 200 字的点评" },
   ...
 ]`;
+
+function buildJudgeSystemPrompt(persona) {
+  return `你是本场辩论赛的裁判，${persona.name}。
+
+${persona.promptSoul}`;
+}
 
 function pickN(n, arr) {
   const shuffled = [...arr].sort(() => Math.random() - 0.5);
@@ -308,7 +308,7 @@ function getNextSpeaker(state) {
     }
   }
 
-  return { phase: 'judging' };
+  return { phase: 'judging', judgeIndex: state.judgeIndex, label: '裁判评判' };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -439,13 +439,16 @@ async function executeSpeech(event, state, speaker) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Judge phase 1 — parallel LLM scoring
+//  Judge phase 1 — one judge per call, per-click model
 // ═══════════════════════════════════════════════════════════════
 
-async function executeJudgingPhase1(event, state) {
+async function executeOneJudge(event, state, judgeIndex) {
   const judgeEntry = state.roleCache.get(state.judgeRoleId);
   if (!judgeEntry) throw new Error(`裁判大脑 ${state.judgeRoleId} 未加载`);
   const judgeBrain = judgeEntry.brain;
+
+  const persona = state.judgePersonas[judgeIndex];
+  if (!persona) throw new Error(`裁判索引 ${judgeIndex} 超出范围`);
 
   // Build full debate history
   let history = '';
@@ -460,138 +463,139 @@ async function executeJudgingPhase1(event, state) {
     ...state.conRoles.map(p => ({ roleId: p.roleId, side: 'con', position: p.position })),
   ];
 
-  // Sequential judging: one judge at a time — LLM → parse → save → render → next
-  for (let j = 0; j < state.judgePersonas.length; j++) {
-    const persona = state.judgePersonas[j];
+  // Debug: send prompt for this judge
+  if (state.debugMode) {
+    const sampleSys = buildJudgeSystemPrompt(persona);
+    const debugUsr = `以下是本场辩论的完整记录：\n\n${history}\n\n${JUDGE_SCORING_RULES}\n\n请根据你对 ${persona.name} 的角色定位给出评分：`;
+    event.sender.send('debate:prompt', { system: sampleSys, user: debugUsr });
+  }
 
-    // Debug: send prompt (first judge only)
-    if (state.debugMode && j === 0) {
-      const sampleSys = buildJudgeSystemPrompt(persona);
-      const debugUsr = `以下是本场辩论的完整记录：\n\n${history}\n\n${JUDGE_SCORING_RULES}\n\n请根据你对 ${persona.name} 的角色定位给出评分：`;
-      event.sender.send('debate:prompt', { system: `（3 位裁判依次评分，此为第一位提示词示例）\n\n${sampleSys}`, user: debugUsr });
-    }
+  // 1. Send isFirst delta BEFORE LLM call — immediate thinking box with animation
+  event.sender.send('debate:delta', {
+    roleId: state.judgeRoleId,
+    roleName: `${persona.name} · 裁判`,
+    content: '',
+    phase: 'judging',
+    side: 'judge',
+    position: 0,
+    isFirst: true,
+    personaIndex: judgeIndex,
+    totalPersonas: state.judgePersonas.length,
+  });
 
-    // 1. Call LLM — system only has identity, scoring rules are in user msg (near output)
-    const sys = buildJudgeSystemPrompt(persona);
-    const usr = `以下是本场辩论的完整记录：\n\n${history}\n\n${JUDGE_SCORING_RULES}\n\n请根据你对 ${persona.name} 的角色定位给出评分：`;
+  // 2. Call LLM
+  const sys = buildJudgeSystemPrompt(persona);
+  const usr = `以下是本场辩论的完整记录：\n\n${history}\n\n${JUDGE_SCORING_RULES}\n\n请根据你对 ${persona.name} 的角色定位给出评分：`;
 
-    let text = '', tokens = 0;
-    await streamSpeech(judgeBrain, [
-      { role: 'system', content: sys },
-      { role: 'user', content: usr },
-    ], 8192,
-      () => {},
-      (c, t) => { text = c; tokens = t; },
-      'judge'
-    );
+  let text = '', tokens = 0;
+  await streamSpeech(judgeBrain, [
+    { role: 'system', content: sys },
+    { role: 'user', content: usr },
+  ], 8192,
+    () => {},
+    (c, t) => { text = c; tokens = t; },
+    'judge'
+  );
 
-    if (!text.trim()) throw new Error(`裁判 ${persona.name} 输出为空`);
+  if (!text.trim()) throw new Error(`裁判 ${persona.name} 输出为空`);
 
-    // 2. Parse JSON scores
-    let scores;
-    try {
-      scores = JSON.parse(text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim());
-    } catch {
-      throw new Error(`裁判 ${persona.name} 输出无法解析为 JSON：${text.slice(0, 200)}`);
-    }
+  // 3. Parse JSON scores
+  let scores;
+  try {
+    scores = JSON.parse(text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim());
+  } catch {
+    throw new Error(`裁判 ${persona.name} 输出无法解析为 JSON：${text.slice(0, 200)}`);
+  }
+  if (!Array.isArray(scores)) throw new Error(`裁判 ${persona.name} 输出不是数组`);
 
-    if (!Array.isArray(scores)) throw new Error(`裁判 ${persona.name} 输出不是数组`);
+  // 4. Validate numeric fields and calculate weighted totals
+  const w = persona.weights;
+  for (const sc of scores) {
+    sc.content = parseInt(sc.content) || 0;
+    sc.logic = parseInt(sc.logic) || 0;
+    sc.expression = parseInt(sc.expression) || 0;
+    sc.rebuttal = parseInt(sc.rebuttal) || 0;
+    sc.weightedTotal = sc.content * w.content + sc.logic * w.logic + sc.expression * w.expression + sc.rebuttal * w.rebuttal;
+  }
 
-    // 3. Calculate weighted totals
-    const w = persona.weights;
-    for (const sc of scores) {
-      sc.weightedTotal = (sc.content || 0) * w.content + (sc.logic || 0) * w.logic + (sc.expression || 0) * w.expression + (sc.rebuttal || 0) * w.rebuttal;
-    }
-
-    // 4. Save to DebateScore
-    for (const sc of scores) {
-      const def = allPositionDefs.find(p => p.side === sc.side && p.position === sc.position);
-      if (!def) continue;
-      await prisma.debateScore.create({
-        data: {
-          debateId: state.debateId,
-          roleId: def.roleId,
-          judgeRoleId: state.judgeRoleId,
-          judgePersonaId: persona.id,
-          side: sc.side,
-          position: sc.position,
-          scoreContent: sc.content,
-          scoreLogic: sc.logic,
-          scoreExpression: sc.expression,
-          scoreRebuttal: sc.rebuttal,
-          weightedTotal: sc.weightedTotal,
-          judgeComment: sc.comment || null,
-        },
-      });
-    }
-
-    // 5. Build readable text
-    let readable = `**${persona.name} · 评分**\n\n`;
-    readable += `| 辩手 | 内容 | 逻辑 | 表达 | 反驳 | 加权总分 | 评语 |\n`;
-    readable += `|------|------|------|------|------|---------|------|\n`;
-    for (const sc of scores) {
-      const sideLabel = sc.side === 'pro' ? '正方' : '反方';
-      const posName = POSITION_NAMES[sc.position] || '';
-      readable += `| ${sideLabel}${posName} | ${sc.content ?? '-'} | ${sc.logic ?? '-'} | ${sc.expression ?? '-'} | ${sc.rebuttal ?? '-'} | ${sc.weightedTotal.toFixed(2)} | ${sc.comment || ''} |\n`;
-    }
-
-    // 6. Send delta to frontend (simulated streaming)
-    event.sender.send('debate:delta', {
-      roleId: state.judgeRoleId,
-      roleName: `${persona.name} · 裁判`,
-      content: '',
-      phase: 'judging',
-      side: 'judge',
-      position: 0,
-      isFirst: true,
-      personaIndex: j,
-      totalPersonas: state.judgePersonas.length,
-    });
-
-    for (let i = 0; i < readable.length; i += 5) {
-      event.sender.send('debate:delta', {
-        roleId: state.judgeRoleId,
-        content: readable.slice(i, i + 5),
-        isFirst: false,
-      });
-    }
-
-    // 7. Persist judge message to DB
-    await prisma.debateMessage.create({
+  // 5. Save to DebateScore
+  for (const sc of scores) {
+    const def = allPositionDefs.find(p => p.side === sc.side && p.position === sc.position);
+    if (!def) continue;
+    await prisma.debateScore.create({
       data: {
         debateId: state.debateId,
-        roleId: state.judgeRoleId,
-        side: 'judge',
-        position: 0,
-        round: 'judging',
-        content: readable,
-        tokenCount: tokens || null,
-        charCount: readable.length,
-        roundIndex: ++state.roundIdx,
+        roleId: def.roleId,
+        judgeRoleId: state.judgeRoleId,
+        judgePersonaId: persona.id,
+        side: sc.side,
+        position: sc.position,
+        scoreContent: sc.content,
+        scoreLogic: sc.logic,
+        scoreExpression: sc.expression,
+        scoreRebuttal: sc.rebuttal,
+        weightedTotal: sc.weightedTotal,
+        judgeComment: sc.comment || null,
       },
-    });
-
-    // 8. Send round_done per judge
-    event.sender.send('debate:round_done', {
-      phase: 'judging',
-      side: 'judge',
-      position: 0,
-      label: '裁判评判',
-      roleId: state.judgeRoleId,
-      roleName: `${persona.name} · 裁判`,
-      content: readable,
-      charsUsed: readable.length,
-      charBudget: 0,
-      roundIndex: state.roundIdx,
-      personaIndex: j,
-      totalPersonas: state.judgePersonas.length,
-      sideCharsPro: 0,
-      sideCharsCon: 0,
     });
   }
 
-  // Signal all judges done
-  event.sender.send('debate:judging_done', { personaCount: state.judgePersonas.length });
+  // 6. Build readable markdown & stream to frontend with delay
+  let readable = `**${persona.name} · 评分**\n\n`;
+  readable += `| 辩手 | 内容 | 逻辑 | 表达 | 反驳 | 加权总分 | 评语 |\n`;
+  readable += `|------|------|------|------|------|---------|------|\n`;
+  for (const sc of scores) {
+    const sideLabel = sc.side === 'pro' ? '正方' : '反方';
+    const posName = POSITION_NAMES[sc.position] || '';
+    readable += `| ${sideLabel}${posName} | ${sc.content ?? '-'} | ${sc.logic ?? '-'} | ${sc.expression ?? '-'} | ${sc.rebuttal ?? '-'} | ${sc.weightedTotal.toFixed(2)} | ${sc.comment || ''} |\n`;
+  }
+
+  event.sender.send('debate:delta', {
+    roleId: state.judgeRoleId,
+    content: readable,
+    isFirst: false,
+  });
+
+  // 7. Persist judge message to DB
+  await prisma.debateMessage.create({
+    data: {
+      debateId: state.debateId,
+      roleId: state.judgeRoleId,
+      side: 'judge',
+      position: 0,
+      round: 'judging',
+      content: readable,
+      tokenCount: tokens || null,
+      charCount: readable.length,
+      roundIndex: ++state.roundIdx,
+    },
+  });
+
+  // 8. Increment judge index for next click
+  state.judgeIndex++;
+
+  // 9. Send round_done per judge (enables step button for next judge)
+  event.sender.send('debate:round_done', {
+    phase: 'judging',
+    side: 'judge',
+    position: 0,
+    label: '裁判评判',
+    roleId: state.judgeRoleId,
+    roleName: `${persona.name} · 裁判`,
+    content: readable,
+    charsUsed: readable.length,
+    charBudget: 0,
+    roundIndex: state.roundIdx,
+    personaIndex: judgeIndex,
+    totalPersonas: state.judgePersonas.length,
+    sideCharsPro: 0,
+    sideCharsCon: 0,
+  });
+
+  // 10. If last judge, signal judging_done
+  if (state.judgeIndex >= state.judgePersonas.length) {
+    event.sender.send('debate:judging_done', { personaCount: state.judgePersonas.length });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -603,17 +607,18 @@ async function aggregateJudging(state) {
     where: { debateId: state.debateId, weightedTotal: { not: null } },
   });
 
-  // Group by roleId, collect weightedTotals from all judges
-  const byRole = {};
+  // Group by side+position (not roleId — same role can appear in multiple positions)
+  const bySidePos = {};
   for (const sc of scores) {
-    if (!byRole[sc.roleId]) {
-      byRole[sc.roleId] = { side: sc.side, position: sc.position, roleId: sc.roleId, totals: [] };
+    const key = `${sc.side}-${sc.position}`;
+    if (!bySidePos[key]) {
+      bySidePos[key] = { side: sc.side, position: sc.position, totals: [] };
     }
-    if (sc.weightedTotal != null) byRole[sc.roleId].totals.push(sc.weightedTotal);
+    if (sc.weightedTotal != null) bySidePos[key].totals.push(sc.weightedTotal);
   }
 
   // Average per debater
-  const avgs = Object.values(byRole).map(d => ({
+  const avgs = Object.values(bySidePos).map(d => ({
     ...d,
     average: d.totals.length > 0 ? d.totals.reduce((a, b) => a + b, 0) / d.totals.length : 0,
   }));
@@ -647,10 +652,65 @@ async function aggregateJudging(state) {
     data: { status: 'completed' },
   });
 
-  active.delete(state.debateId);
   state.completed = true;
 
   return { winner, bestPro: proBest?.position, bestCon: conBest?.position, overallBest: allBest?.position, proTotal: proSum, conTotal: conSum };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Phase state recovery (for resume)
+// ═══════════════════════════════════════════════════════════════
+
+function recoverPhaseState(messages) {
+  let phaseIndex = 0;
+  let phaseStepIndex = 0;
+  let perSideChars = { pro: 0, con: 0 };
+  let crossTurn = 'pro';
+  let freeTurn = 'pro';
+
+  for (let i = 0; i < ROUNDS.length; i++) {
+    const roundDef = ROUNDS[i];
+    const phase = roundDef.phase;
+    const phaseMsgs = messages.filter(m => m.round === phase);
+    const phaseChars = { pro: 0, con: 0 };
+    for (const m of phaseMsgs) {
+      const c = m.charCount || m.content.length || 0;
+      if (m.side === 'pro') phaseChars.pro += c;
+      if (m.side === 'con') phaseChars.con += c;
+    }
+
+    let phaseComplete = false;
+    if (roundDef.speakerList) {
+      phaseComplete = roundDef.speakerList.every(sp =>
+        phaseMsgs.some(m => m.side === sp.side && m.position === sp.pos)
+      );
+    } else if (roundDef.speakers === 'cross') {
+      phaseComplete = phaseChars.pro >= roundDef.budget && phaseChars.con >= roundDef.budget;
+    } else if (roundDef.speakers === 'free') {
+      phaseComplete = phaseChars.pro >= roundDef.budget && phaseChars.con >= roundDef.budget;
+    }
+
+    if (!phaseComplete) {
+      phaseIndex = i;
+      perSideChars = phaseChars;
+      if (roundDef.speakerList) {
+        phaseStepIndex = phaseMsgs.length;
+      }
+      if (roundDef.speakers === 'cross' && phaseMsgs.length > 0) {
+        crossTurn = phaseMsgs[phaseMsgs.length - 1].side === 'pro' ? 'con' : 'pro';
+      }
+      if (roundDef.speakers === 'free' && phaseMsgs.length > 0) {
+        freeTurn = phaseMsgs[phaseMsgs.length - 1].side === 'pro' ? 'con' : 'pro';
+      }
+      break;
+    }
+
+    if (i === ROUNDS.length - 1) {
+      phaseIndex = ROUNDS.length;
+    }
+  }
+
+  return { phaseIndex, phaseStepIndex, perSideChars, crossTurn, freeTurn };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -765,6 +825,7 @@ module.exports = function (ipcMain) {
       freeTurn: 'pro',
       debugMode: !!debugMode,
       completed: false,
+      judgeIndex: 0,
     };
 
     active.set(debate.id, state);
@@ -822,56 +883,8 @@ module.exports = function (ipcMain) {
       side: m.side, position: m.position, content: m.content, phase: m.round,
     }));
 
-    // Determine current phase and compute perSideChars per phase
-    const phaseOrder = ['opening', 'rebuttal', 'cross', 'free', 'closing'];
-    let phaseIndex = 0;
-    let phaseStepIndex = 0;
-    let perSideChars = { pro: 0, con: 0 };
-    let crossTurn = 'pro';
-    let freeTurn = 'pro';
-
-    for (let i = 0; i < phaseOrder.length; i++) {
-      const phase = phaseOrder[i];
-      const roundDef = ROUNDS[i];
-      const phaseMsgs = debate.messages.filter(m => m.round === phase);
-      const phaseChars = { pro: 0, con: 0 };
-      for (const m of phaseMsgs) {
-        const c = m.charCount || m.content.length || 0;
-        if (m.side === 'pro') phaseChars.pro += c;
-        if (m.side === 'con') phaseChars.con += c;
-      }
-
-      let phaseComplete = false;
-      if (roundDef.speakerList) {
-        // Fixed speaker list: all positions spoken
-        phaseComplete = roundDef.speakerList.every(sp =>
-          phaseMsgs.some(m => m.side === sp.side && m.position === sp.pos)
-        );
-      } else if (roundDef.speakers === 'cross') {
-        phaseComplete = phaseChars.pro >= roundDef.budget && phaseChars.con >= roundDef.budget;
-      } else if (roundDef.speakers === 'free') {
-        phaseComplete = phaseChars.pro >= roundDef.budget && phaseChars.con >= roundDef.budget;
-      }
-
-      if (!phaseComplete) {
-        phaseIndex = i;
-        perSideChars = phaseChars;
-        if (roundDef.speakerList) {
-          phaseStepIndex = phaseMsgs.length;
-        }
-        if (roundDef.speakers === 'cross' && phaseMsgs.length > 0) {
-          crossTurn = phaseMsgs[phaseMsgs.length - 1].side === 'pro' ? 'con' : 'pro';
-        }
-        if (roundDef.speakers === 'free' && phaseMsgs.length > 0) {
-          freeTurn = phaseMsgs[phaseMsgs.length - 1].side === 'pro' ? 'con' : 'pro';
-        }
-        break;
-      }
-
-      if (i === phaseOrder.length - 1) {
-        phaseIndex = phaseOrder.length; // all done, will trigger judging
-      }
-    }
+    // Determine current phase via shared recovery logic
+    const { phaseIndex, phaseStepIndex, perSideChars, crossTurn, freeTurn } = recoverPhaseState(debate.messages);
 
     const state = {
       debateId: debate.id,
@@ -892,7 +905,19 @@ module.exports = function (ipcMain) {
       freeTurn,
       debugMode: resumeDebugMode,
       completed: false,
+      judgeIndex: 0,
     };
+
+    // Count already-processed judges from DebateScore to set correct judgeIndex
+    const existingJudgeIds = await prisma.debateScore.findMany({
+      where: { debateId: debate.id, judgePersonaId: { not: null } },
+      select: { judgePersonaId: true },
+      distinct: ['judgePersonaId'],
+    });
+    state.judgeIndex = existingJudgeIds.length;
+    if (state.judgeIndex >= judgePersonas.length) {
+      state.judgeIndex = judgePersonas.length;
+    }
 
     active.set(debate.id, state);
     return { debateId: debate.id };
@@ -915,7 +940,7 @@ module.exports = function (ipcMain) {
       const speaker = getNextSpeaker(state);
 
       if (speaker.phase === 'judging') {
-        await executeJudgingPhase1(event, state);
+        await executeOneJudge(event, state, speaker.judgeIndex);
         return;
       }
 
