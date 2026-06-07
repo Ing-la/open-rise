@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -45,6 +46,7 @@ next-env.d.ts
 *.db-journal
 prisma/dev.db
 prisma/dev.db-journal
+prisma/schema.sql
 
 # docs - ignore all except project/ and project-step/
 /docs/*
