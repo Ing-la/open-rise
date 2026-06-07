@@ -15,11 +15,12 @@ import {
   getAgentToolList,
   getAgentSessionCompactInfo,
   clearAgentSession,
+  Role,
 } from '@/lib/api';
 
 interface AgentViewProps {
-  agentRole: any | null;
-  onAgentRoleChange: (role: any | null) => void;
+  agentRole: Role | null;
+  onAgentRoleChange: (role: Role | null) => void;
   sessions: any[];
   activeSessionId: string | null;
   onCreateSession: () => void;
@@ -89,6 +90,11 @@ export default function AgentView({
       setError(null);
       setProgress('');
     }
+  }, [activeSessionId]);
+
+  // ── Focus input when session changes ──
+  useEffect(() => {
+    inputRef.current?.focus();
   }, [activeSessionId]);
 
   // ── Scroll to bottom ──
@@ -253,7 +259,8 @@ export default function AgentView({
             });
           }
         } else if (trimmed === '/tool') {
-          getAgentToolList(agentRole?.id).then((tools) => {
+          if (!agentRole) return;
+          getAgentToolList(agentRole.id).then((tools) => {
             showCommandResult(trimmed, formatToolList(tools));
           }).catch(() => {
             showCommandResult(trimmed, '获取工具列表失败');

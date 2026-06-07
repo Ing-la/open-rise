@@ -1,0 +1,31 @@
+appId: com.openrise.app
+productName: OpenRise
+
+directories:
+  output: dist
+
+files:
+  - "**/*"
+  - "!src/**/*"
+  - "!docs/**/*"
+  - "!.git/**/*"
+  - "!.github/**/*"
+  - "!prisma/migrations/**/*"
+  - "!prisma/archives/**/*"
+  - "!prisma/agent-archives/**/*"
+  - "!prisma/images/**/*"
+  - "!prisma/dev.db*"
+  - prisma/schema.sql
+
+win:
+  target: nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target: dmg
+
+linux:
+  target: AppImage

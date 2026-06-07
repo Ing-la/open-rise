@@ -2,8 +2,7 @@
 // LLM 编排，不是 Agent — 没有工具调用，没有 ReAct 循环。
 // 步进式执行：每点一次「下一步」执行一轮发言。
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../db');
 
 // ═══════════════════════════════════════════════════════════════
 //  Round definitions
@@ -85,7 +84,11 @@ ${persona.promptSoul}`;
 }
 
 function pickN(n, arr) {
-  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
   return shuffled.slice(0, n);
 }
 

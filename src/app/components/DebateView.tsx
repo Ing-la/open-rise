@@ -320,6 +320,82 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
     cleanupRef.current = unsub;
   }, []);
 
+  // ── Shared subscribe callbacks factory ──
+  function subscribeCallbacks(avatarMap: Map<string, string>, phaseMap: Record<string, string>, posNames: string[]) {
+    return {
+      onDelta: (data: any) => {
+        if (data.isFirst) {
+          streamingAccum.current = '';
+          streamingSpeechIdx.current = -1;
+          const entry: SpeechEntry = {
+            roleId: data.roleId, roleName: data.roleName || '',
+            avatar: avatarMap.get(data.roleId) || undefined,
+            side: data.side || 'judge',
+            position: data.position ? (data.side === 'judge' ? '裁判' : posNames[data.position] || '') : '裁判',
+            phase: phaseMap[data.phase] || data.phase || '裁判评判',
+            content: '', charsUsed: 0, charBudget: 0, isStreaming: true,
+          };
+          setSpeeches(prev => { streamingSpeechIdx.current = prev.length; return [...prev, entry]; });
+          setCurrentSpeakerId(data.roleId);
+          setCurrentPhase(phaseMap[data.phase] || data.phase || '裁判评判');
+          const markSpeaking = (d: DebaterInfo) => ({ ...d, status: (d.roleId === data.roleId ? 'speaking' : d.status) as DebaterInfo['status'] });
+          setProDebaters(prev => prev.map(markSpeaking));
+          setConDebaters(prev => prev.map(markSpeaking));
+        } else if (data.content) {
+          streamingAccum.current += data.content;
+          setSpeeches(prev => {
+            const idx = streamingSpeechIdx.current;
+            if (idx < 0 || idx >= prev.length) return prev;
+            const copy = [...prev];
+            copy[idx] = { ...copy[idx], content: streamingAccum.current };
+            return copy;
+          });
+        }
+      },
+      onPrompt: (data: any) => { setLatestPrompt(data); },
+      onRoundDone: (data: any) => {
+        setSpeeches(prev => {
+          const idx = streamingSpeechIdx.current;
+          if (idx < 0 || idx >= prev.length) return prev;
+          const copy = [...prev];
+          const isCrossFree = CROSS_FREE_PHASES.includes(data.label || data.phase || '');
+          const sideCumulative = data.side === 'pro' ? (data.sideCharsPro || 0) : (data.sideCharsCon || 0);
+          copy[idx] = { ...copy[idx], content: data.content || copy[idx].content, charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0), charBudget: data.charBudget || 0, isStreaming: false };
+          return copy;
+        });
+        setRoundIndex(data.roundIndex || 0);
+        setCurrentPhase(data.label || data.phase || '');
+        const markDone = (d: DebaterInfo) => d.roleId === data.roleId && d.side === data.side
+          ? { ...d, status: 'done' as DebaterInfo['status'] } : d;
+        setProDebaters(prev => prev.map(markDone));
+        setConDebaters(prev => prev.map(markDone));
+        setCurrentSpeakerId(null);
+        if (data.phase === 'judging') {
+          setJudgingIndex(data.personaIndex ?? 0);
+        }
+        setIsStepping(false);
+      },
+      onJudgingDone: (data: any) => {
+        setJudgingPhase2Ready(true);
+        setJudgingTotal(data.personaCount || 0);
+        setIsStepping(false);
+      },
+      onDone: (data: any) => {
+        setWinner(data.winner as 'pro' | 'con');
+        setPageMode('finished');
+        setCurrentSpeakerId(null);
+        setIsStepping(false);
+        cleanupRef.current = null;
+      },
+      onError: (data: any) => {
+        console.error('[Debate Error]', data.error);
+        setDebateError(data.error || '未知错误');
+        setIsStepping(false);
+        cleanupRef.current = null;
+      },
+    };
+  }
+
   // ── Create debate from setup ──
   const handleSetupStart = useCallback(async (params: any) => {
     try {
@@ -372,103 +448,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
       const phaseMap: Record<string, string> = {
         opening: '立论', rebuttal: '驳论', cross: '对辩', free: '自由辩论', closing: '总结', judging: '裁判评判',
       };
-      subscribe({
-        onDelta: (data) => {
-          if (data.isFirst) {
-            // Create new speech entry
-            streamingAccum.current = '';
-            streamingSpeechIdx.current = -1;
-            const entry: SpeechEntry = {
-              roleId: data.roleId,
-              roleName: data.roleName || '',
-              avatar: avatarMap.get(data.roleId) || undefined,
-              side: data.side || 'judge',
-              position: data.position ? (data.side === 'judge' ? '裁判' : ['', '一辩', '二辩', '三辩', '四辩'][data.position] || '') : '裁判',
-              phase: phaseMap[data.phase] || data.phase || '裁判评判',
-              content: '',
-              charsUsed: 0,
-              charBudget: 0,
-              isStreaming: true,
-            };
-            setSpeeches(prev => {
-              streamingSpeechIdx.current = prev.length;
-              return [...prev, entry];
-            });
-            setCurrentSpeakerId(data.roleId);
-            setCurrentPhase(phaseMap[data.phase] || data.phase || '裁判评判');
-            // Update debater status
-            const markSpeaking = (d: DebaterInfo) => ({ ...d, status: (d.roleId === data.roleId ? 'speaking' : d.status) as DebaterInfo['status'] });
-            setProDebaters(prev => prev.map(markSpeaking));
-            setConDebaters(prev => prev.map(markSpeaking));
-          } else if (data.content) {
-            streamingAccum.current += data.content;
-            setSpeeches(prev => {
-              const idx = streamingSpeechIdx.current;
-              if (idx < 0 || idx >= prev.length) return prev;
-              const copy = [...prev];
-              copy[idx] = { ...copy[idx], content: streamingAccum.current };
-              return copy;
-            });
-          }
-        },
-        onPrompt: (data) => {
-          setLatestPrompt(data);
-        },
-        onRoundDone: (data) => {
-          // Finalize speech
-          setSpeeches(prev => {
-            const idx = streamingSpeechIdx.current;
-            if (idx < 0 || idx >= prev.length) return prev;
-            const copy = [...prev];
-            const isCrossFree = CROSS_FREE_PHASES.includes(data.label || data.phase || '');
-            const sideCumulative = data.side === 'pro' ? (data.sideCharsPro || 0) : (data.sideCharsCon || 0);
-            copy[idx] = {
-              ...copy[idx],
-              content: data.content || copy[idx].content,
-              charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0),
-              charBudget: data.charBudget || 0,
-              isStreaming: false,
-            };
-            return copy;
-          });
-
-          setRoundIndex(data.roundIndex || 0);
-          setCurrentPhase(data.label || data.phase || '');
-
-          // Update debater status to done
-          const markDone = (d: DebaterInfo) => d.roleId === data.roleId && d.side === data.side
-            ? { ...d, status: 'done' as DebaterInfo['status'] }
-            : d;
-          setProDebaters(prev => prev.map(markDone));
-          setConDebaters(prev => prev.map(markDone));
-          setCurrentSpeakerId(null);
-
-          // Track judging index
-          if (data.phase === 'judging') {
-            setJudgingIndex(data.personaIndex ?? 0);
-          }
-          // Enable step button
-          setIsStepping(false);
-        },
-        onJudgingDone: (data) => {
-          setJudgingPhase2Ready(true);
-          setJudgingTotal(data.personaCount || 0);
-          setIsStepping(false);
-        },
-        onDone: (data) => {
-          setWinner(data.winner as 'pro' | 'con');
-          setPageMode('finished');
-          setCurrentSpeakerId(null);
-          setIsStepping(false);
-          cleanupRef.current = null;
-        },
-        onError: (data) => {
-          console.error('[Debate Error]', data.error);
-          setDebateError(data.error || '未知错误');
-          setIsStepping(false);
-          cleanupRef.current = null;
-        },
-      });
+      subscribe(subscribeCallbacks(avatarMap, phaseMap, ['', '一辩', '二辩', '三辩', '四辩']));
     } catch (err) {
       console.error('[Debate Create]', err);
     }
@@ -611,80 +591,7 @@ export default function DebateView({ onPhaseInfo }: { onPhaseInfo?: (info: { cur
         setDebugMode(!!debate.debugMode);
         setPageMode('active');
 
-        // Re-subscribe for step events
-        const resumePhaseMap = phaseMap;
-        subscribe({
-          onDelta: (data) => {
-            if (data.isFirst) {
-              streamingAccum.current = '';
-              streamingSpeechIdx.current = -1;
-              const entry: SpeechEntry = {
-                roleId: data.roleId, roleName: data.roleName || '',
-                avatar: avatarMap.get(data.roleId) || undefined,
-                side: data.side || 'judge',
-                position: data.position ? (data.side === 'judge' ? '裁判' : posNames[data.position] || '') : '裁判',
-                phase: resumePhaseMap[data.phase] || data.phase || '裁判评判',
-                content: '', charsUsed: 0, charBudget: 0, isStreaming: true,
-              };
-              setSpeeches(prev => { streamingSpeechIdx.current = prev.length; return [...prev, entry]; });
-              setCurrentSpeakerId(data.roleId);
-              setCurrentPhase(resumePhaseMap[data.phase] || data.phase || '裁判评判');
-              const markSpeaking = (d: DebaterInfo) => ({ ...d, status: (d.roleId === data.roleId ? 'speaking' : d.status) as DebaterInfo['status'] });
-              setProDebaters(prev => prev.map(markSpeaking));
-              setConDebaters(prev => prev.map(markSpeaking));
-            } else if (data.content) {
-              streamingAccum.current += data.content;
-              setSpeeches(prev => {
-                const idx = streamingSpeechIdx.current;
-                if (idx < 0 || idx >= prev.length) return prev;
-                const copy = [...prev];
-                copy[idx] = { ...copy[idx], content: streamingAccum.current };
-                return copy;
-              });
-            }
-          },
-          onPrompt: (data) => { setLatestPrompt(data); },
-          onRoundDone: (data) => {
-            setSpeeches(prev => {
-              const idx = streamingSpeechIdx.current;
-              if (idx < 0 || idx >= prev.length) return prev;
-              const copy = [...prev];
-              const isCrossFree = CROSS_FREE_PHASES.includes(data.label || data.phase || '');
-              const sideCumulative = data.side === 'pro' ? (data.sideCharsPro || 0) : (data.sideCharsCon || 0);
-              copy[idx] = { ...copy[idx], content: data.content || copy[idx].content, charsUsed: isCrossFree ? sideCumulative : (data.charsUsed || 0), charBudget: data.charBudget || 0, isStreaming: false };
-              return copy;
-            });
-            setRoundIndex(data.roundIndex || 0);
-            setCurrentPhase(data.label || data.phase || '');
-            const markDone = (d: DebaterInfo) => d.roleId === data.roleId && d.side === data.side
-              ? { ...d, status: 'done' as DebaterInfo['status'] } : d;
-            setProDebaters(prev => prev.map(markDone));
-            setConDebaters(prev => prev.map(markDone));
-            setCurrentSpeakerId(null);
-            if (data.phase === 'judging') {
-              setJudgingIndex(data.personaIndex ?? 0);
-            }
-            setIsStepping(false);
-          },
-          onJudgingDone: (data) => {
-            setJudgingPhase2Ready(true);
-            setJudgingTotal(data.personaCount || 0);
-            setIsStepping(false);
-          },
-          onDone: (data) => {
-            setWinner(data.winner as 'pro' | 'con');
-            setPageMode('finished');
-            setCurrentSpeakerId(null);
-            setIsStepping(false);
-            cleanupRef.current = null;
-          },
-          onError: (data) => {
-            console.error('[Debate Error]', data.error);
-            setDebateError(data.error || '未知错误');
-            setIsStepping(false);
-            cleanupRef.current = null;
-          },
-        });
+        subscribe(subscribeCallbacks(avatarMap, phaseMap, posNames));
         return;
       }
 

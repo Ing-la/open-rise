@@ -35,7 +35,7 @@ function SvgFrame({ children, size }: { children: React.ReactNode; size?: number
   );
 }
 
-export function AvatarIcon({ id, size }: { id: string; size?: number }) {
+export function AvatarIcon({ id, size }: { id: string | null; size?: number }) {
   const s = size ?? 56;
   const c = AVATARS.find((a) => a.id === id)?.color ?? '#2C2C2C';
   const p = { stroke: c, strokeWidth: 2.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, filter: 'url(#tremble)' };

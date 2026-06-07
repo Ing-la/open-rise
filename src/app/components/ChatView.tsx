@@ -4,12 +4,12 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AvatarIcon } from './AvatarIcon';
-import { listMessages, sendChatMessageStream, saveImage } from '@/lib/api';
+import { listMessages, sendChatMessageStream, saveImage, Role } from '@/lib/api';
 
 interface ChatViewProps {
-  individuals: any[];
-  selectedPerson: any | null;
-  onSelectPerson: (person: any) => void;
+  individuals: Role[];
+  selectedPerson: Role | null;
+  onSelectPerson: (person: Role) => void;
   sidebarOpen: boolean;
 }
 
@@ -34,6 +34,11 @@ export default function ChatView({ individuals, selectedPerson, onSelectPerson, 
       setMessages([]);
       setLoading(false);
     }
+  }, [selectedPerson]);
+
+  // ── Focus input and scroll when person changes ──
+  useEffect(() => {
+    textareaRef.current?.focus();
   }, [selectedPerson]);
 
   // ── Scroll to bottom when messages change ──

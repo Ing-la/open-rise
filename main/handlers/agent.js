@@ -284,6 +284,7 @@ async function runAgentLoop(event, sessionId, roleId, content) {
       await prisma.agentMessage.create({
         data: { sessionId, role: 'assistant', content: finalResult, type: 'text' },
       });
+      stoppedSessions.delete(sessionId);
       event.sender.send('agent:done', { sessionId, result: finalResult, trace });
       return;
     }
@@ -382,6 +383,7 @@ async function runAgentLoop(event, sessionId, roleId, content) {
   }
 
   // Max iterations reached without finishing
+  stoppedSessions.delete(sessionId);
   await prisma.agentMessage.create({
     data: { sessionId, role: 'assistant', content: '(已达到最大迭代次数，任务可能未完成)', type: 'text' },
   });
@@ -394,10 +396,9 @@ async function runAgentLoop(event, sessionId, roleId, content) {
 
 // ── Capabilities ──
 
-function loadCapabilities() {
+function migrateCapabilities() {
   try {
     const raw = JSON.parse(fs.readFileSync(CAPABILITIES_PATH, 'utf-8'));
-    // Migrate from old format: { "image": { roleId, brainId } } → { roleId: { "image": { brainId } } }
     if (raw.image || raw.vision) {
       const migrated = {};
       for (const capType of ['image', 'vision']) {
@@ -411,9 +412,13 @@ function loadCapabilities() {
       if (Object.keys(migrated).length > 0) {
         fs.writeFileSync(CAPABILITIES_PATH, JSON.stringify(migrated, null, 2));
       }
-      return migrated;
     }
-    return raw;
+  } catch {}
+}
+
+function loadCapabilities() {
+  try {
+    return JSON.parse(fs.readFileSync(CAPABILITIES_PATH, 'utf-8')) || {};
   } catch {
     return {};
   }
@@ -422,6 +427,8 @@ function loadCapabilities() {
 // ── Registration ──
 
 module.exports = function (ipcMain) {
+  // Run one-time migration of legacy capability format on startup
+  migrateCapabilities();
   // Session management
   ipcMain.handle('agent:session-create', async (_event, params) => {
     return handleSessionCreate(params);
@@ -460,6 +467,7 @@ module.exports = function (ipcMain) {
       await runAgentLoop(event, sessionId, roleId, content);
     } catch (err) {
       console.error('Agent error:', err);
+      stoppedSessions.delete(sessionId);
       event.sender.send('agent:error', { sessionId, error: String(err) });
     }
   });

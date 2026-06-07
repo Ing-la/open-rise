@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { listRoles, listAgentSessions, createAgentSession, deleteAgentSession, renameAgentSession, clearMessages } from '@/lib/api';
+import { listRoles, listAgentSessions, createAgentSession, deleteAgentSession, renameAgentSession, clearMessages, Role } from '@/lib/api';
 import { AvatarIcon } from './AvatarIcon';
 import CommandCenter from './CommandCenter';
 import ChatView from './ChatView';
@@ -12,21 +12,22 @@ import RoleLibrary from './RoleLibrary';
 import ConfirmDialog from './ConfirmDialog';
 import AgentCapabilitiesModal from './AgentCapabilitiesModal';
 import DebateView from './DebateView';
+import ErrorBoundary from './ErrorBoundary';
 
 const SIDEBAR_W = 256;
 
 export default function PageShell() {
   const [mode, setMode] = useState<'home' | 'chat' | 'agent' | 'debate' | 'brain-library' | 'role-library'>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState<any | null>(null);
-  const [agentRole, setAgentRole] = useState<any | null>(null);
-  const [individuals, setIndividuals] = useState<any[]>([]);
+  const [selectedPerson, setSelectedPerson] = useState<Role | null>(null);
+  const [agentRole, setAgentRole] = useState<Role | null>(null);
+  const [individuals, setIndividuals] = useState<Role[]>([]);
   const [agentSessions, setAgentSessions] = useState<any[]>([]);
   const [agentActiveSessionId, setAgentActiveSessionId] = useState<string | null>(null);
   const [capabilitiesModalOpen, setCapabilitiesModalOpen] = useState(false);
   const [debatePhaseInfo, setDebatePhaseInfo] = useState<{ currentPhase: string; roundIndex: number }>({ currentPhase: '', roundIndex: 0 });
   const [debateResetKey, setDebateResetKey] = useState(0);
-  const [clearTarget, setClearTarget] = useState<any | null>(null);
+  const [clearTarget, setClearTarget] = useState<Role | null>(null);
   const [sessionDeleteTarget, setSessionDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
@@ -98,7 +99,7 @@ export default function PageShell() {
     setAgentRole(null);
   }, []);
 
-  const handleSelectPerson = useCallback((person: any) => {
+  const handleSelectPerson = useCallback((person: Role) => {
     setSelectedPerson(person);
     setSidebarOpen(false);
     if (mode === 'home') setMode('chat');
@@ -137,11 +138,11 @@ export default function PageShell() {
     setSidebarOpen(next);
   }, [sidebarOpen]);
 
-  const handleAgentRoleChange = useCallback((role: any | null) => {
+  const handleAgentRoleChange = useCallback((role: Role | null) => {
     setAgentRole(role);
   }, []);
 
-  const handleClearMessages = useCallback(async (person: any) => {
+  const handleClearMessages = useCallback(async (person: Role) => {
     setClearTarget(person);
   }, []);
 
@@ -369,6 +370,7 @@ export default function PageShell() {
       {/* ════════════════════════════════════════════
           Main Content
           ════════════════════════════════════════════ */}
+      <ErrorBoundary>
       <div className="flex-1 flex flex-col min-w-0 pt-12 transition-all duration-200 ease-out">
         {/* ─── Home ─── */}
         {mode === 'home' && (
@@ -422,6 +424,7 @@ export default function PageShell() {
           <RoleLibrary onBack={exitToHome} />
         )}
       </div>
+      </ErrorBoundary>
 
       {/* ── Agent capabilities modal ── */}
       <AgentCapabilitiesModal

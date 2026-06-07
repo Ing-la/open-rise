@@ -1,3 +1,28 @@
+// ── Core data types (mirrors IPC response shapes) ──
+
+export interface Role {
+  id: string;
+  name: string;
+  avatar: string | null;
+  brainId: string;
+  brainName: string;
+  brainType: string;
+  soul: string;
+  rule: string;
+  createdAt: string;
+}
+
+export interface AgentSession {
+  id: string;
+  roleId: string;
+  title: string;
+  status: string;
+  summary: string | null;
+  compactedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Client-side API abstraction ──
 // Bridges Electron IPC when available; graceful fallback otherwise.
 

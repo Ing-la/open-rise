@@ -9,6 +9,7 @@
     "next:lint": "next lint",
     "electron:dev": "wait-on http://localhost:3000 && electron .",
     "dev": "concurrently \"npm run next:dev\" \"npm run electron:dev\"",
+    "prebuild": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/schema.sql",
     "build": "next build && electron-builder"
   },
   "dependencies": {

@@ -205,17 +205,21 @@ async function streamChatResponse(event, brain, role, messages, roleId) {
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buf = '';
   let fullReply = '';
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    const text = decoder.decode(value, { stream: true });
-    const lines = text.split('\n').filter((l) => l.startsWith('data: '));
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
 
     for (const line of lines) {
-      const data = line.slice(6).trim();
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
       if (data === '[DONE]') continue;
       try {
         const json = JSON.parse(data);
