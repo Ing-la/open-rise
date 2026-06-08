@@ -47,6 +47,9 @@ next-env.d.ts
 prisma/dev.db
 prisma/dev.db-journal
 prisma/schema.sql
+prisma/tmp.db
+prisma/archives/
+prisma/agent-archives/
 
 # docs - ignore all except project/ and project-step/
 /docs/*

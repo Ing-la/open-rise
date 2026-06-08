@@ -10,6 +10,7 @@ files:
   - "!docs/**/*"
   - "!.git/**/*"
   - "!.github/**/*"
+  - "!.next/**/*"
   - "!prisma/migrations/**/*"
   - "!prisma/archives/**/*"
   - "!prisma/agent-archives/**/*"
