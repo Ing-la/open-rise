@@ -17,6 +17,10 @@ files:
   - "!prisma/images/**/*"
   - "!prisma/dev.db*"
   - prisma/schema.sql
+  - prisma/generated/**/*
+
+asarUnpack:
+  - "prisma/generated/**/*.node"
 
 win:
   target: nsis

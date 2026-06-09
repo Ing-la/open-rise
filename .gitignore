@@ -50,6 +50,7 @@ prisma/schema.sql
 prisma/tmp.db
 prisma/archives/
 prisma/agent-archives/
+prisma/generated/
 
 # docs - ignore all except project/ and project-step/
 /docs/*
